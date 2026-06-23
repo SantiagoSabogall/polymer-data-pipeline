@@ -1,13 +1,17 @@
+import os
 import requests
 from lxml import etree
 import webbrowser
+from dotenv import load_dotenv
 
-# ========= CONFIGURACIÓN CORREGIDA =========
-API_KEY = "9f5a1f06efed14d3649dfb4e23ab072d"  # Corregido: Ahora es un string entre comillas
-QUERY   = "julia"     
+load_dotenv(dotenv_path="API_KEY.env")
 
 
-TOTAL_RESULTS = 100                           # Corregido: Definido como un número entero exacto
+API_KEY = os.getenv("ELSEVIER_API_KEY")
+QUERY   = "andromeda"     
+
+
+TOTAL_RESULTS = 100                           
 CHUNK_SIZE = 25
 
 url = "https://api.elsevier.com/content/search/scopus"

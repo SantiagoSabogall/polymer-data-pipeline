@@ -1,8 +1,18 @@
 import requests
 
-mi_informacion = {"nombre": "Equipo de Investigación", "proyecto": "Polímeros"}
+CLIENT_ID = "APP-EX4LO9JF529CG4F0"
+CLIENT_SECRET = "tu_secret"
 
-# Enviamos los datos al servidor
-respuesta = requests.post("https://httpbin.org/post", json=mi_informacion)
+token_url = "https://sandbox.orcid.org/oauth/token"
 
-print(respuesta.status_code)
+data = {
+    "client_id": CLIENT_ID,
+    "client_secret": CLIENT_SECRET,
+    "grant_type": "client_credentials",
+    "scope": "/read-public"
+}
+
+r = requests.post(token_url, data=data)
+
+print(r.status_code)
+print(r.text)
