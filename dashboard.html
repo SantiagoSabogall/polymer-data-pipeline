@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymer Data Pipeline Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-primary: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.15);
+            
+            --badge-l1: #10b981;
+            --badge-l2: #f59e0b;
+            --badge-l3: #3b82f6;
+            --badge-l4: #ec4899;
+            
+            --source-crossref: #8b5cf6;
+            --source-springer: #f43f5e;
+            --source-elsevier: #0ea5e9;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
+                              radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+
+        .logo-section h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #38bdf8 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .logo-section p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.2rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.25rem;
+            backdrop-filter: blur(12px);
+            transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--accent-primary);
+            opacity: 0.7;
+        }
+
+        .stat-card.l1::before { background: var(--badge-l1); }
+        .stat-card.l2::before { background: var(--badge-l2); }
+        .stat-card.l3::before { background: var(--badge-l3); }
+        .stat-card.l4::before { background: var(--badge-l4); }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(56, 189, 248, 0.3);
+            box-shadow: 0 8px 30px var(--accent-glow);
+        }
+
+        .stat-card .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 0.5rem;
+        }
+
+        /* Seccion de Control y Busqueda */
+        .controls-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            margin-bottom: 2rem;
+        }
+
+        .search-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 300px;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 0.8rem 1rem 0.8rem 2.8rem;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
+        }
+
+        .search-box::before {
+            content: '🔍';
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1rem;
+            opacity: 0.5;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: rgba(51, 65, 85, 0.4);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.6rem 1.2rem;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            background: rgba(51, 65, 85, 0.8);
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-primary);
+            border-color: var(--accent-primary);
+            color: #0f172a;
+            font-weight: 600;
+        }
+
+        /* Tabla de Resultados */
+        .results-container {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .table-scroll {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.5);
+            padding: 1.2rem 1.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1.2rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.95rem;
+            vertical-align: middle;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .title-col {
+            font-weight: 600;
+            color: var(--text-main);
+            max-width: 500px;
+            word-wrap: break-word;
+        }
+
+        .doi-link {
+            color: var(--accent-primary);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            transition: color 0.2s ease;
+        }
+
+        .doi-link:hover {
+            color: #7dd3fc;
+            text-decoration: underline;
+        }
+
+        /* Badges de Lógica */
+        .badge {
+            display: inline-block;
+            padding: 0.35rem 0.7rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-align: center;
+        }
+
+        .badge.l1 { background: rgba(16, 185, 129, 0.15); color: var(--badge-l1); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .badge.l2 { background: rgba(245, 158, 11, 0.15); color: var(--badge-l2); border: 1px solid rgba(245, 158, 11, 0.3); }
+        .badge.l3 { background: rgba(59, 130, 246, 0.15); color: var(--badge-l3); border: 1px solid rgba(59, 130, 246, 0.3); }
+        .badge.l4 { background: rgba(236, 72, 153, 0.15); color: var(--badge-l4); border: 1px solid rgba(236, 72, 153, 0.3); }
+
+        .badge.src-crossref { background: rgba(139, 92, 246, 0.15); color: var(--source-crossref); border: 1px solid rgba(139, 92, 246, 0.3); }
+        .badge.src-springer { background: rgba(244, 63, 94, 0.15); color: var(--source-springer); border: 1px solid rgba(244, 63, 94, 0.3); }
+        .badge.src-elsevier { background: rgba(14, 165, 233, 0.15); color: var(--source-elsevier); border: 1px solid rgba(14, 165, 233, 0.3); }
+
+        .empty-state {
+            padding: 4rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-state h3 {
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive Layout */
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+            .search-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .filter-group {
+                justify-content: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="logo-section">
+            <h1>Polymer Data Pipeline</h1>
+            <p>Dashboard de Artículos Consolidados y Deduplicados</p>
+        </div>
+    </header>
+
+    <!-- Indicadores de métricas -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="label">Total Artículos</div>
+            <div class="value" id="stat-total">95</div>
+        </div>
+        <div class="stat-card l1">
+            <div class="label">Level 1 (Blends)</div>
+            <div class="value" id="stat-l1">45</div>
+        </div>
+        <div class="stat-card l2">
+            <div class="label">Level 2 (Aditivos)</div>
+            <div class="value" id="stat-l2">18</div>
+        </div>
+        <div class="stat-card l3">
+            <div class="label">Level 3 (Empaques)</div>
+            <div class="value" id="stat-l3">14</div>
+        </div>
+        <div class="stat-card l4">
+            <div class="label">Level 4 (Biodegradables)</div>
+            <div class="value" id="stat-l4">18</div>
+        </div>
+    </div>
+
+    <!-- Controles interactivos -->
+    <div class="controls-card">
+        <div class="search-row">
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Buscar por título, autor, revista, DOI..." oninput="filterData()">
+            </div>
+            
+            <div class="filter-group">
+                <button class="filter-btn active" id="btn-all-lvl" onclick="filterLevel('ALL', this)">Todos los Niveles</button>
+                <button class="filter-btn" onclick="filterLevel('L1', this)">Level 1</button>
+                <button class="filter-btn" onclick="filterLevel('L2', this)">Level 2</button>
+                <button class="filter-btn" onclick="filterLevel('L3', this)">Level 3</button>
+                <button class="filter-btn" onclick="filterLevel('L4', this)">Level 4</button>
+            </div>
+
+            <div class="filter-group">
+                <button class="filter-btn active" id="btn-all-src" onclick="filterSource('ALL', this)">Todas las APIs</button>
+                <button class="filter-btn" onclick="filterSource('Crossref', this)">Crossref</button>
+                <button class="filter-btn" onclick="filterSource('Springer', this)">Springer</button>
+                <button class="filter-btn" onclick="filterSource('Elsevier', this)">Elsevier</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabla principal -->
+    <div class="results-container">
+        <div class="table-scroll">
+            <table id="articles-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">Nivel</th>
+                        <th>Título</th>
+                        <th>Autor Principal</th>
+                        <th>Revista</th>
+                        <th style="width: 80px;">Año</th>
+                        <th style="width: 120px;">Fuente</th>
+                        <th>DOI / Enlace</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Los datos se inyectarán de forma dinámica mediante JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        <div id="empty-message" class="empty-state" style="display: none;">
+            <h3>No se encontraron resultados</h3>
+            <p>Intenta ajustar la búsqueda o los filtros seleccionados.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Inyección de los resultados unificados
+    const dataset = [{"title": "Robust Compatible Blend of Poly(butylene carbonate-co-terephthalate) and Poly(butylene adipate-co-terephthalate) toward a High Barrier Blown Film", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acs.iecr.4c03599.s001", "source": "Crossref", "level": "L1"}, {"title": "High-Barrier Poly(butylene succinate-co-terephthalate) Blend with Poly(lactic acid) as Biodegradable Food Packaging Films", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acs.iecr.3c00158.s001", "source": "Crossref", "level": "L1"}, {"title": "Effects of composition and processing variables on barrier property of liquid crystalline polymer/polyethylene blend films", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.58837/chula.the.2003.985", "source": "Crossref", "level": "L1"}, {"title": "High Oxygen Barrier Polyester from 3,3-Bifuran-5,5-dicarboxylic Acid", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acsmacrolett.2c00743.s001", "source": "Crossref", "level": "L1"}, {"title": "Enhanced Water Vapor Barrier and Gas Barrier Properties of Transparent Poly(Butylene Adipate‑Co‑Terephthalate)/Poly(Lactic Acid)/Hexagonal Boron Nitride Nanosheets Composite Films", "author": "Ke Wang", "journal": "No disponible", "year": "", "doi": "10.2139/ssrn.4512613", "source": "Crossref", "level": "L1"}, {"title": "Barrier, thermal, and mechanical properties of polyglycolic acid/polyethylene terephthalate (PET) and liquid crystalline polymer/PET blend films", "author": "Rishabh Tiwari", "journal": "Polymer", "year": "2025", "doi": "10.1016/j.polymer.2025.128761", "source": "Crossref", "level": "L1"}, {"title": "Synthesis of High Molecular Weight Polyester Using in Situ Drying Method and Assessment of Water Vapor and Oxygen Barrier Properties", "author": "Shouyun Cheng", "journal": "Polymers", "year": "2018", "doi": "10.3390/polym10101113", "source": "Crossref", "level": "L1"}, {"title": "Poly Glycolic Acid: High Gas Barrier Polyester", "author": "Kazuyuki YAMANE", "journal": "Kobunshi", "year": "2008", "doi": "10.1295/kobunshi.57.990", "source": "Crossref", "level": "L1"}, {"title": "Enhanced water vapor barrier and gas barrier properties of transparent poly(butylene adipate‑co‑terephthalate)/poly(lactic acid)/hexagonal boron nitride nanosheets composite films", "author": "Ke Wang", "journal": "Materials Letters", "year": "2023", "doi": "10.1016/j.matlet.2023.135171", "source": "Crossref", "level": "L1"}, {"title": "Oxygen barrier properties of biaxially oriented polypropylene/polyvinyl alcohol blend films", "author": "J JANG", "journal": "Polymer", "year": "2004", "doi": "10.1016/s0032-3861(03)01207-2", "source": "Crossref", "level": "L1"}, {"title": "Biopolymer and Carnauba Wax Coating for Improved Paper Oxygen Barrier, Water Vapor Barrier, and Grease Resistance", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acsami.5c09638.s001", "source": "Crossref", "level": "L1"}, {"title": "Development of Plasma Enhanced Chemical Vapor Deposition for Moisture Barrier On Polyethylene Terephthalate Substrates", "author": "Desconocido", "journal": "59th Annual Technical Conference Proceedings", "year": "2016", "doi": "10.14332/svc16.proc.0062", "source": "Crossref", "level": "L1"}, {"title": "Dimethyl 2Methylterephthalate: A Versatile Building Block in Polyester Synthesis with Intriguing Gas Barrier Properties", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acssuschemeng.6c01735.s001", "source": "Crossref", "level": "L1"}, {"title": "Enhancement of Water Vapor Barrier Properties of Biodegradable Poly(butylene adipate-co-terephthalate) Films with Highly Oriented Organomontmorillonite", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acssuschemeng.8b00430.s001", "source": "Crossref", "level": "L1"}, {"title": "Effect of rice straw loading on morphological, thermal, gas barrier, and mechanical properties of poly(lactic acid)/poly(3-hydroxybutyrate-co-4-hydroxybutyrate) blend films", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.58837/chula.the.2023.122", "source": "Crossref", "level": "L1"}, {"title": "Valorization of Sugarcane Leaf Residues through Co-carbonization with Polypropylene Waste for Engineered Carbon Materials", "author": "Al-Senani, Ghadah M.", "journal": "Sugar Tech", "year": "2026", "doi": "10.1007/s12355-026-01751-1", "source": "Springer", "level": "L1"}, {"title": "Electrospun Nanofibrous Materials for Emergent Application and a Sustainable Future", "author": "Shlapakova, Lada E.", "journal": "Advanced Fiber Materials", "year": "2026", "doi": "10.1007/s42765-026-00693-3", "source": "Springer", "level": "L1"}, {"title": "Eco-friendly strategies for 2,5-furandicarboxylic acid production: insights from biomass conversion", "author": "Hu, Zilong", "journal": "Biomass Conversion and Biorefinery", "year": "2026", "doi": "10.1007/s13399-026-07185-9", "source": "Springer", "level": "L1"}, {"title": "Innovative packaging films with enhanced properties based on natural polymers and CoAl_2O_4 or CuAl_2O_4 spinel nanoparticles", "author": "Mekkey, Saleh D.", "journal": "Chemical Papers", "year": "2026", "doi": "10.1007/s11696-026-05149-x", "source": "Springer", "level": "L1"}, {"title": "Smart Packaging Technologies for Shelf-Life Extension and Safety Monitoring", "author": "Devare, S. G.", "journal": "Chemistry Africa", "year": "2026", "doi": "10.1007/s42250-026-01725-6", "source": "Springer", "level": "L1"}, {"title": "Food-derived degradation products as design inputs for next-generation packaging materials: a review", "author": "Jain, Harshita", "journal": "Journal of Food Measurement and Characterization", "year": "2026", "doi": "10.1007/s11694-026-04573-7", "source": "Springer", "level": "L1"}, {"title": "Comparative study of EPDM/SBR rubber blend composites reinforced with graphene oxide, AEAPMDMS-modified graphene oxide, and TESPT-functionalized graphene oxide", "author": "Vishvanathperumal, S.", "journal": "Iranian Polymer Journal", "year": "2026", "doi": "10.1007/s13726-026-01696-y", "source": "Springer", "level": "L1"}, {"title": "Renewable Polymers from Epoxidized Vegetable Oils and 2,5-Furandicarboxylic Acid", "author": "Moser, Bryan R.", "journal": "Journal of Polymers and the Environment", "year": "2026", "doi": "10.1007/s10924-026-03889-1", "source": "Springer", "level": "L1"}, {"title": "Ductile Polylactic Acid Blends Containing Bio-Based Poly(Butylene Glutarate-co-2,5-furandicarboxylate)", "author": "Zhao, Zhenxiao", "journal": "Journal of Polymers and the Environment", "year": "2026", "doi": "10.1007/s10924-026-03890-8", "source": "Springer", "level": "L1"}, {"title": "Coupled polarization dynamics and ion mobility in PVDF-HFP/ionic liquid/TiSiO_4 composite electrolytes", "author": "Kouka, Tarek", "journal": "Journal of Materials Science: Materials in Electronics", "year": "2026", "doi": "10.1007/s10854-026-17708-9", "source": "Springer", "level": "L1"}, {"title": "Two-dimensional nanomaterials in biodegradable food packaging: enhancing barrier properties, mechanical strength, and active functionality", "author": "Eskalen, Hasan", "journal": "Polymer Bulletin", "year": "2026", "doi": "10.1007/s00289-026-06542-y", "source": "Springer", "level": "L1"}, {"title": "Recent advances in biopolymer-based bio-nanocomposite coatings for biodegradable Nonwoven textiles: materials, performance, and sustainability", "author": "Baysal, Gülçin", "journal": "Polymer Bulletin", "year": "2026", "doi": "10.1007/s00289-026-06511-5", "source": "Springer", "level": "L1"}, {"title": "Recent progress in environmentally friendly coatings with improved corrosion resistance, mechanical durability, and antibiofouling properties", "author": "Priyadharshini, R.", "journal": "Polymer Bulletin", "year": "2026", "doi": "10.1007/s00289-026-06539-7", "source": "Springer", "level": "L1"}, {"title": "Plant-based functional and active agents in sustainable food packaging: a comprehensive review", "author": "Sarma, Jula", "journal": "Journal of Food Science and Technology", "year": "2026", "doi": "10.1007/s13197-026-06755-z", "source": "Springer", "level": "L1"}, {"title": "Reactive filament extrusion and 3D printing of high performance polylactic acid/lignin biocomposites", "author": "Alshammari, Shallal", "journal": "Progress in Additive Manufacturing", "year": "2026", "doi": "10.1007/s40964-026-01802-9", "source": "Springer", "level": "L1"}, {"title": "Multilayer Oxygen-Scavenging Biodegradable Polylactic Acid Films Reinforced with Microcrystalline Cellulose and Butylated Hydroxytoluene: Experimental Study of Structure-Property-Function Relationships Completed with Bibliometric Analysis toward Sustainable Development Goals (SDGs)", "author": "Dirpan A.", "journal": "Asean Journal for Science and Engineering in Materials", "year": "2027", "doi": "", "source": "Elsevier", "level": "L1"}, {"title": "A Prospective Review on Bioplastics and Biopolymers", "author": "Moreira R.", "journal": "Bioenergy Research", "year": "2026", "doi": "10.1007/s12155-026-10964-x", "source": "Elsevier", "level": "L1"}, {"title": "Nanocellulose reinforced sustainable polyvinyl alcohol and pectin based nanocomposite films embedded with AgO/ZnO nano structures for wound dressing applications", "author": "Koshy J.T.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-025-34411-7", "source": "Elsevier", "level": "L1"}, {"title": "Recent advances in pectin-based films for sustainable intelligent packaging applications in animal-derived foods", "author": "Krishna Murthy C.S.", "journal": "Food Control", "year": "2026", "doi": "10.1016/j.foodcont.2026.112347", "source": "Elsevier", "level": "L1"}, {"title": "Cracking the code of multi-layer films to promote circularity in single-use plastic packaging", "author": "Quinn E.C.", "journal": "Nature Communications", "year": "2026", "doi": "10.1038/s41467-026-68936-w", "source": "Elsevier", "level": "L1"}, {"title": "Development of PBAT films reinforced with SiC/g-C3N4 nanohybrids for enhanced biocompatibility and antibacterial performance", "author": "Venkatesan R.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-025-32172-x", "source": "Elsevier", "level": "L1"}, {"title": "Biodegradable PBAT films with in situ synthesized tannic acid/ZnS nanohybrids for active packaging, offering antioxidant, antibacterial, and UV-shielding properties", "author": "Niksefat M.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-025-30768-x", "source": "Elsevier", "level": "L1"}, {"title": "Cashew nutshell liquid derivatives as a sustainable route to alkyd-free surface coatings", "author": "Kyei S.K.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-35993-6", "source": "Elsevier", "level": "L1"}, {"title": "Dual-network anionic polysaccharide films: pH-induced negative charge loading enhances film performance", "author": "Liu X.", "journal": "Food Hydrocolloids", "year": "2026", "doi": "10.1016/j.foodhyd.2026.112951", "source": "Elsevier", "level": "L1"}, {"title": "Green fabrication of PVA based biofilms incorporated with shrimp shell derived chitosan, plasticized with PEG or Gly and reinforced by biosynthesized ZnO nanoparticles", "author": "Ezzatabadipour F.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-39184-1", "source": "Elsevier", "level": "L1"}, {"title": "Triboperformance of diamond-like carbon films for rubbers: progress, challenges, and enhancements", "author": "Yuan Z.", "journal": "Surface Science and Technology", "year": "2026", "doi": "10.1007/s44251-026-00128-6", "source": "Elsevier", "level": "L1"}, {"title": "Improved processability, compatibilization, mechanical properties and biodegradability of polylactic acid/crystalline cellulose composites compatibilized with glycerol citrate", "author": "Sánchez-Picón L.V.", "journal": "Discover Materials", "year": "2026", "doi": "10.1007/s43939-025-00523-0", "source": "Elsevier", "level": "L1"}, {"title": "Materials, processing, and structural strategies for encapsulation in stretchable and flexible optoelectronics", "author": "Yoo H.", "journal": "Npj Flexible Electronics", "year": "2026", "doi": "10.1038/s41528-026-00545-5", "source": "Elsevier", "level": "L1"}, {"title": "Two-dimensional material-polymer hybrid membranes for enhanced mechanical stability and environmental remediation", "author": "Talreja N.", "journal": "Discover Nano", "year": "2026", "doi": "10.1186/s11671-026-04492-y", "source": "Elsevier", "level": "L1"}, {"title": "Sustainable Cellulose Enables Blue Energy Toward Osmotic Energy Conversion", "author": "Wang Y.", "journal": "Nano Micro Letters", "year": "2026", "doi": "10.1007/s40820-026-02213-9", "source": "Elsevier", "level": "L1"}, {"title": "Comparing Two Clay Nanoplatelets for Improved Moisture Barrier and Mechanical Performance in High Oxygen Barrier Layer-by-Layer Nanocomposite Coatings", "author": "Rahul Manna", "journal": "No disponible", "year": "", "doi": "10.2139/ssrn.5379268", "source": "Crossref", "level": "L2"}, {"title": "Review for \"Acid-derived bacterial cellulose nanocrystals as organic filler for the generation of high-oxygen barrier bio-nanocomposite coatings\"", "author": "Desconocido", "journal": "No disponible", "year": "2023", "doi": "10.1039/d3fb00147d/v2/review1", "source": "Crossref", "level": "L2"}, {"title": "Review for \"Acid-derived bacterial cellulose nanocrystals as organic filler for the generation of high-oxygen barrier bio-nanocomposite coatings\"", "author": "Desconocido", "journal": "No disponible", "year": "2023", "doi": "10.1039/d3fb00147d/v1/review1", "source": "Crossref", "level": "L2"}, {"title": "Review for \"Acid-derived bacterial cellulose nanocrystals as organic filler for the generation of high-oxygen barrier bio-nanocomposite coatings\"", "author": "Desconocido", "journal": "No disponible", "year": "2023", "doi": "10.1039/d3fb00147d/v1/review2", "source": "Crossref", "level": "L2"}, {"title": "Decision letter for \"Acid-derived bacterial cellulose nanocrystals as organic filler for the generation of high-oxygen barrier bio-nanocomposite coatings\"", "author": "Desconocido", "journal": "No disponible", "year": "2023", "doi": "10.1039/d3fb00147d/v1/decision1", "source": "Crossref", "level": "L2"}, {"title": "Decision letter for \"Acid-derived bacterial cellulose nanocrystals as organic filler for the generation of high-oxygen barrier bio-nanocomposite coatings\"", "author": "Desconocido", "journal": "No disponible", "year": "2023", "doi": "10.1039/d3fb00147d/v2/decision1", "source": "Crossref", "level": "L2"}, {"title": "Design and Synthesis of Stereoblock Polylactic Acid with High Oxygen and Water Vapor Barrier Performances", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acs.iecr.3c03003.s001", "source": "Crossref", "level": "L2"}, {"title": "Effect of surfactant and orgnoclay loading on mechanical and gas barrier properties of evoh/clay nanocomposite films", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.58837/chula.the.2006.1608", "source": "Crossref", "level": "L2"}, {"title": "Polyethylene Blends for Improved Oxygen Barrier: Processing-Dependent Microstructure and Gas Permeability", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acsapm.3c02211.s001", "source": "Crossref", "level": "L2"}, {"title": "High-Temperature Multilayer Composite Films of Polyethylene/Ethylene Vinyl Alcohol with Enhanced Flexural Moduli and Gas Barrier Properties", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acsapm.4c01666.s001", "source": "Crossref", "level": "L2"}, {"title": "Toward next-generation exotic-leather alternatives: a comparative analysis of genuine crocodile leather and its bio-based and synthetic imitations", "author": "Venturelli, Giovanni", "journal": "Journal of Materials Science", "year": "2026", "doi": "10.1007/s10853-026-12927-1", "source": "Springer", "level": "L2"}, {"title": "Sweat and air permeable electronics enabled by engineered hierarchical fabric system for exercise management", "author": "Ou, Qiuqian", "journal": "Microsystems & Nanoengineering", "year": "2026", "doi": "10.1038/s41378-026-01362-6", "source": "Springer", "level": "L2"}, {"title": "Engineering Complexity in Cellular Agriculture: Bridging the Gap to Structured Meat and Marine Fillets", "author": "Shuaibu, Abubakar", "journal": "Food Biophysics", "year": "2026", "doi": "10.1007/s11483-026-10170-4", "source": "Springer", "level": "L2"}, {"title": "Deep learning enabled decision support systems in epilepsy surgery: a scoping review", "author": "Yu, Kai", "journal": "npj Health Systems", "year": "2026", "doi": "10.1038/s44401-026-00103-1", "source": "Springer", "level": "L2"}, {"title": "Development performance of CSS and SAGD in heavy oil reservoirs with top and bottom aquifers", "author": "Zhao, Fenglan", "journal": "Heat and Mass Transfer", "year": "2026", "doi": "10.1007/s00231-026-03713-5", "source": "Springer", "level": "L2"}, {"title": "Recent advances in packaging solutions for emerging food processing technologies", "author": "de Lima I.", "journal": "Journal of Food Engineering", "year": "2027", "doi": "10.1016/j.jfoodeng.2026.113190", "source": "Elsevier", "level": "L2"}, {"title": "Highly porous biochar from spent coffee ground for fully green thermal insulating composites with thermal conductivity of 0.04 W m−1 K−1", "author": "Kim S.J.", "journal": "Biochar", "year": "2026", "doi": "10.1007/s42773-026-00584-1", "source": "Elsevier", "level": "L2"}, {"title": "Thirty years of contact angles reveal universal design rules for wetting control", "author": "Karimdoost Yasuri A.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-40965-x", "source": "Elsevier", "level": "L2"}, {"title": "Polyesters for Monolithic Barrier Food Packaging", "author": "Matt C. Muir", "journal": "Plastics in Food Packaging Conference", "year": "2023", "doi": "10.1201/9781003421993-29", "source": "Crossref", "level": "L3"}, {"title": "Gas and Water Vapor Barrier Performance of Cellulose NanocrystalCitric Acid-Coated Polypropylene for Flexible Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1021/acsapm.0c00483.s001", "source": "Crossref", "level": "L3"}, {"title": "Development of a Humidity-Resistant Coating to Impart High\n                                Oxygen Barrier Performance to Food Packaging Films", "author": "Ryan Yinghua Cox", "journal": "No disponible", "year": "", "doi": "10.15368/theses.2017.63", "source": "Crossref", "level": "L3"}, {"title": "Packaging of Liquids with Flexible Barrier Materials", "author": "XJR Avula", "journal": "Technical Advances in Packaging with Flexible Barrier Materials", "year": "1973", "doi": "10.1520/stp38911s", "source": "Crossref", "level": "L3"}, {"title": "Development of High-Barrier Film for Food Packaging", "author": "Maryam Fereydoon", "journal": "Plastic Films in Food Packaging", "year": "2013", "doi": "10.1016/b978-1-4557-3112-1.00005-3", "source": "Crossref", "level": "L3"}, {"title": "Barrier of flexible packaging films", "author": "Barry A. Morris", "journal": "The Science and Technology of Flexible Packaging", "year": "2022", "doi": "10.1016/b978-0-323-85435-1.00013-2", "source": "Crossref", "level": "L3"}, {"title": "Why Is an Oxygen Barrier Required?", "author": "Arthur Hirsch", "journal": "Flexible Food Packaging", "year": "1991", "doi": "10.1007/978-1-4615-3908-7_4", "source": "Crossref", "level": "L3"}, {"title": "High barrier graphene/polymer nanocomposite films", "author": "Ahmad Allahbakhsh", "journal": "Food Packaging", "year": "2017", "doi": "10.1016/b978-0-12-804302-8.00020-0", "source": "Crossref", "level": "L3"}, {"title": "Understanding the Barrier and Mechanical Behavior of Different Nanofillers in Chitosan Films for Food Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.37473/fic/10.3390/polym13050721", "source": "Crossref", "level": "L3"}, {"title": "Terminology Relating to Flexible Barrier Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1520/f0017-17", "source": "Crossref", "level": "L3"}, {"title": "Terminology Relating to Flexible Barrier Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1520/f0017", "source": "Crossref", "level": "L3"}, {"title": "Terminology Relating to Flexible Barrier Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1520/f0017-13a", "source": "Crossref", "level": "L3"}, {"title": "Terminology Relating to Flexible Barrier Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1520/f0017-13", "source": "Crossref", "level": "L3"}, {"title": "Progress in barrier packaging materials: bio-based nanocomposites as barrier materials for food packaging applications", "author": "Giuliana Gorrasi", "journal": "Progress in Nanomaterials for Food Packaging", "year": "2014", "doi": "10.4155/ebo.13.307", "source": "Crossref", "level": "L3"}, {"title": "Biopolymer/clay nanocomposites as the high barrier packaging material: recent advances", "author": "Kateryna Fatyeyeva", "journal": "Food Packaging", "year": "2017", "doi": "10.1016/b978-0-12-804302-8.00013-3", "source": "Crossref", "level": "L4"}, {"title": "Terminology Relating to Flexible Barrier Packaging", "author": "Desconocido", "journal": "No disponible", "year": "", "doi": "10.1520/f0017-02", "source": "Crossref", "level": "L4"}, {"title": "Revolutionizing food science: a review on the role of nanotechnology in enhancing safety, quality, and sustainability", "author": "Nagaraj, Karuppiah", "journal": "Journal of Food Science and Technology", "year": "2026", "doi": "10.1007/s13197-026-06713-9", "source": "Springer", "level": "L4"}, {"title": "Review: research progress on multi-field applications of gelatin-based materials", "author": "Xu, Wei", "journal": "Journal of Materials Science", "year": "2026", "doi": "10.1007/s10853-026-12900-y", "source": "Springer", "level": "L4"}, {"title": "Properties of Pectin-Based Films Extracted from Citrus Peels (Orange, Tangerine, Lemon, Pomelo) Using Acidic and Alkali-Assisted Acidic Extraction", "author": "Sogut, Ece", "journal": "Waste and Biomass Valorization", "year": "2026", "doi": "10.1007/s12649-026-03564-5", "source": "Springer", "level": "L4"}, {"title": "Oak testa extract-loaded chitosan/gelatin/polyvinyl alcohol casting films for potential applications in wound dressings", "author": "Pourzare, Farshid", "journal": "Iranian Polymer Journal", "year": "2026", "doi": "10.1007/s13726-025-01595-8", "source": "Springer", "level": "L4"}, {"title": "Nano-emulsified kesum essential oil-based gelatine-chitosan edible film enhanced with enzymatically reticulated microbial transglutaminase", "author": "Chuan, Yik Shuan", "journal": "Journal of Food Science and Technology", "year": "2026", "doi": "10.1007/s13197-025-06294-z", "source": "Springer", "level": "L4"}, {"title": "A Collaborative approach to SDGs: Catalyzing green materials into biochar for sustainable polymeric applications in the automotive industry", "author": "Abas, Falak O.", "journal": "Polymer Bulletin", "year": "2026", "doi": "10.1007/s00289-026-06538-8", "source": "Springer", "level": "L4"}, {"title": "Transition Metal Silylene Complexes", "author": "Lei, Binglin", "journal": "", "year": "2026", "doi": "10.1007/430_2026_109", "source": "Springer", "level": "L4"}, {"title": "Enhancement of Barrier, Antioxidant and Antifungal Properties of Chitosan/Gelatin Blend Films Added with Sea Urchin Spine Powder", "author": "Prakasam, Vaisshali Prakash Arul", "journal": "Journal of Polymers and the Environment", "year": "2026", "doi": "10.1007/s10924-026-03888-2", "source": "Springer", "level": "L4"}, {"title": "Innovations in electrospinning techniques for nanomaterial synthesis and their applications in the field of active food packaging", "author": "Sree S.", "journal": "Journal of Future Foods", "year": "2027", "doi": "10.1016/j.jfutfo.2025.02.010", "source": "Elsevier", "level": "L4"}, {"title": "Mechanistic and structural engineering of millet-based edible straws via green crosslinking and hydrocolloid integration: pH- and temperature-dependent functional performance", "author": "Patil T.D.", "journal": "Journal of Food Engineering", "year": "2027", "doi": "10.1016/j.jfoodeng.2026.113194", "source": "Elsevier", "level": "L4"}, {"title": "Innovative PBAT/PU/MMT@ZnO-NPs bionanocomposite films based on modified montmorillonite for active food packaging", "author": "El-Nagar I.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-43972-0", "source": "Elsevier", "level": "L4"}, {"title": "Mapping gas permeability of sustainable packaging materials to link food barrier needs by clustering algorithms", "author": "Yeh T.Y.", "journal": "Npj Science of Food", "year": "2026", "doi": "10.1038/s41538-026-00741-7", "source": "Elsevier", "level": "L4"}, {"title": "Development of a biodegradable packaging with antimicrobial properties from bacterial cellulose (SCOBY) matrix by incorporating Myristica fragrans essential oil", "author": "Safeena M.F.", "journal": "Food and Humanity", "year": "2026", "doi": "10.1016/j.foohum.2026.101247", "source": "Elsevier", "level": "L4"}, {"title": "Bacterial nanocellulose films functionalized with Janus nanoparticles: Preparation and application in chicken meat preservation and safety", "author": "Alizadeh N.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-39029-x", "source": "Elsevier", "level": "L4"}, {"title": "Preparation of starch/PVA/Cu-NPs bio-nanocomposites in packing as preservation of UF soft cheese", "author": "El-Refai H.A.", "journal": "Scientific Reports", "year": "2026", "doi": "10.1038/s41598-026-44328-4", "source": "Elsevier", "level": "L4"}, {"title": "Smart nano-packaging materials for sustainable food preservation and safety", "author": "Fabiyi O.A.", "journal": "Discover Food", "year": "2026", "doi": "10.1007/s44187-026-00906-z", "source": "Elsevier", "level": "L4"}];
+
+    let activeLevel = 'ALL';
+    let activeSource = 'ALL';
+
+    function initTable() {
+        renderTable(dataset);
+    }
+
+    function renderTable(data) {
+        const tbody = document.getElementById("table-body");
+        const emptyMsg = document.getElementById("empty-message");
+        tbody.innerHTML = "";
+
+        if (data.length === 0) {
+            emptyMsg.style.display = "block";
+            return;
+        } else {
+            emptyMsg.style.display = "none";
+        }
+
+        data.forEach(item => {
+            const tr = document.createElement("tr");
+
+            // Nivel badge
+            const levelClass = item.level.toLowerCase();
+            const levelBadge = `<span class="badge ${levelClass}">${item.level}</span>`;
+
+            // Fuente badge
+            const sourceClass = `src-${item.source.toLowerCase()}`;
+            const sourceBadge = `<span class="badge ${sourceClass}">${item.source}</span>`;
+
+            // DOI link
+            const doiHtml = item.doi 
+                ? `<a class="doi-link" href="https://doi.org/${item.doi}" target="_blank">🔗 ${item.doi}</a>` 
+                : '<span style="color:var(--text-muted); font-style:italic;">No disponible</span>';
+
+            tr.innerHTML = `
+                <td>${levelBadge}</td>
+                <td class="title-col">${item.title}</td>
+                <td>${item.author}</td>
+                <td>${item.journal}</td>
+                <td>${item.year || 'N/A'}</td>
+                <td>${sourceBadge}</td>
+                <td>${doiHtml}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function filterLevel(level, btn) {
+        // Limpiar estilos de botones de nivel
+        const buttons = btn.parentElement.querySelectorAll(".filter-btn");
+        buttons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        activeLevel = level;
+        filterData();
+    }
+
+    function filterSource(source, btn) {
+        // Limpiar estilos de botones de fuente
+        const buttons = btn.parentElement.querySelectorAll(".filter-btn");
+        buttons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        activeSource = source;
+        filterData();
+    }
+
+    function filterData() {
+        const searchQuery = document.getElementById("search-input").value.toLowerCase().trim();
+
+        const filtered = dataset.filter(item => {
+            const matchesLevel = activeLevel === 'ALL' || item.level === activeLevel;
+            const matchesSource = activeSource === 'ALL' || item.source === activeSource;
+            
+            const matchesSearch = !searchQuery || 
+                item.title.toLowerCase().includes(searchQuery) ||
+                item.author.toLowerCase().includes(searchQuery) ||
+                item.journal.toLowerCase().includes(searchQuery) ||
+                item.doi.toLowerCase().includes(searchQuery);
+
+            return matchesLevel && matchesSource && matchesSearch;
+        });
+
+        // Actualizar contadores
+        document.getElementById("stat-total").innerText = filtered.length;
+        document.getElementById("stat-l1").innerText = filtered.filter(i => i.level === 'L1').length;
+        document.getElementById("stat-l2").innerText = filtered.filter(i => i.level === 'L2').length;
+        document.getElementById("stat-l3").innerText = filtered.filter(i => i.level === 'L3').length;
+        document.getElementById("stat-l4").innerText = filtered.filter(i => i.level === 'L4').length;
+
+        renderTable(filtered);
+    }
+
+    // Iniciar
+    window.onload = initTable;
+</script>
+
+</body>
+</html>
