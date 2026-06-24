@@ -1,144 +1,140 @@
+import os
+import re
 import requests
-from dict import SEARCH_QUERIES
+from dotenv import load_dotenv
 
-# ================================
-# Crossref configuration
-# ================================
+load_dotenv(dotenv_path="API_KEY.env")
 
-URL = "https://api.crossref.org/works"
+ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
+SPRINGER_API_KEY = os.getenv("SPRINGER_META_API_KEY")
+CROSSREF_EMAIL = os.getenv("CROSSREF_POLITE_EMAIL", "ssabogal@unal.edu.co")
 
-HEADERS = {
-    "User-Agent": "PolymerPipeline/1.0 (mailto:your_email@unal.edu.co)"
-}
+TEST_QUERY = "polyester water vapor barrier"
+SAMPLE_SIZE = 3
 
-# ================================
-# Fetch function
-# ================================
 
-def fetch_crossref(query, rows=25, offset=0):
+def test_elsevier():
+    print("\n=== ELSEVIER (Scopus Search API) ===")
 
+    if not ELSEVIER_API_KEY:
+        print("Saltando: ELSEVIER_API_KEY no configurada.")
+        return
+
+    url = "https://api.elsevier.com/content/search/scopus"
+    headers = {"X-ELS-APIKey": ELSEVIER_API_KEY, "Accept": "application/json"}
     params = {
-        "query": query,
-        "rows": rows,
-        "offset": offset
+        "query": TEST_QUERY,
+        "count": SAMPLE_SIZE,
+        "view": "COMPLETE"  # sin esto, dc:description nunca viene en la respuesta
     }
 
-    response = requests.get(
-        URL,
-        params=params,
-        headers=HEADERS
-    )
+    response = requests.get(url, headers=headers, params=params, timeout=15)
+    print("Status:", response.status_code)
 
     if response.status_code != 200:
-        raise Exception(
-            f"Crossref error {response.status_code}\n{response.text}"
-        )
+        print("Respuesta:", response.text[:300])
+        return
 
-    data = response.json()
+    entries = response.json().get("search-results", {}).get("entry", [])
+    if not entries:
+        print("No se obtuvieron resultados para la query de prueba.")
+        return
 
-    return data["message"]["items"]
+    for i, entry in enumerate(entries, 1):
+        title = entry.get("dc:title", "Sin título")
+        abstract = entry.get("dc:description")
+        print(f"\n[{i}] {title}")
+        if abstract:
+            print(f"   Abstract presente ({len(abstract)} caracteres):")
+            print(f"   {abstract[:200]}...")
+        else:
+            print("   Abstract: NO presente en esta respuesta (revisar entitlement de la cuenta)")
 
-# ================================
-# Normalization function
-# ================================
 
-def normalize_article(item):
+    print("\n=== SPRINGER (Meta API) ===")
 
-    title = item.get("title", [""])[0] if item.get("title") else ""
+    if not SPRINGER_API_KEY:
+        print("Saltando: SPRINGER_META_API_KEY no configurada.")
+        return
 
-    doi = item.get("DOI", "")
-
-    journal = item.get("container-title", [""])[0] if item.get("container-title") else ""
-
-    authors = item.get("author", [])
-
-    author = "Desconocido"
-
-    if authors:
-        given = authors[0].get("given", "")
-        family = authors[0].get("family", "")
-        author = f"{given} {family}".strip()
-
-    year = ""
-
-    if "published-print" in item:
-        year = item["published-print"]["date-parts"][0][0]
-
-    elif "published-online" in item:
-        year = item["published-online"]["date-parts"][0][0]
-
-    return {
-        "title": title,
-        "doi": doi,
-        "journal": journal,
-        "author": author,
-        "year": year
+    url = "https://api.springernature.com/meta/v2/json"
+    params = {
+        "q": TEST_QUERY,
+        "p": SAMPLE_SIZE,
+        "api_key": SPRINGER_API_KEY
     }
 
-# ================================
-# Main pipeline
-# ================================
+    response = requests.get(url, params=params, timeout=15)
+    print("Status:", response.status_code)
 
-def run_pipeline():
+    if response.status_code != 200:
+        print("Respuesta:", response.text[:300])
+        return
 
-    all_results = {
-        "L1": [],
-        "L2": [],
-        "L3": [],
-        "L4": []
+    records = response.json().get("records", [])
+    if not records:
+        print("No se obtuvieron resultados para la query de prueba.")
+        return
+
+    for i, record in enumerate(records, 1):
+        title = record.get("title", "Sin título")
+        abstract = record.get("abstract")
+        print(f"\n[{i}] {title}")
+        if abstract:
+            print(f"   Abstract presente ({len(abstract)} caracteres):")
+            print(f"   {abstract[:200]}...")
+        else:
+            print("   Abstract: NO presente en esta respuesta")
+
+
+def test_crossref():
+    print("\n=== CROSSREF (REST API /works) ===")
+
+    url = "https://api.crossref.org/works"
+    headers = {
+        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
+    }
+    params = {
+        "query": TEST_QUERY,
+        "rows": SAMPLE_SIZE
     }
 
-    for level, queries in SEARCH_QUERIES.items():
+    response = requests.get(url, headers=headers, params=params, timeout=15)
+    print("Status:", response.status_code)
 
-        print(f"\n================ {level} ================")
+    if response.status_code != 200:
+        print("Respuesta:", response.text[:300])
+        return
 
-        for query in queries:
+    items = response.json().get("message", {}).get("items", [])
+    if not items:
+        print("No se obtuvieron resultados para la query de prueba.")
+        return
 
-            print(f"Query: {query}")
+    con_abstract = 0
+    for i, item in enumerate(items, 1):
+        title = item.get("title", [""])[0] if item.get("title") else "Sin título"
+        abstract_raw = item.get("abstract")
 
-            items = fetch_crossref(query)
+        print(f"\n[{i}] {title}")
+        if abstract_raw:
+            con_abstract += 1
+            # El abstract de Crossref normalmente viene envuelto en JATS XML
+            # (ej. <jats:p>...</jats:p>). Mostramos ambas versiones para
+            # confirmar si hace falta un paso de limpieza antes de usarlo.
+            print(f"   Abstract RAW (con marcado JATS, primeros 200 car.):")
+            print(f"   {abstract_raw[:200]}")
 
-            print(f"  → resultados: {len(items)}")
+            cleaned = re.sub(r"<[^>]+>", "", abstract_raw).strip()
+            print(f"   Abstract LIMPIO (tags removidos, primeros 200 car.):")
+            print(f"   {cleaned[:200]}...")
+        else:
+            print("   Abstract: NO presente (esta editorial no lo depositó en Crossref)")
 
-            for item in items:
+    print(f"\n--- Cobertura: {con_abstract}/{len(items)} resultados con abstract en esta muestra ---")
 
-                article = normalize_article(item)
-                article["level"] = level
-
-                all_results[level].append(article)
-
-    return all_results
-
-# ================================
-# Execution
-# ================================
 
 if __name__ == "__main__":
+    test_elsevier()
 
-    results = run_pipeline()
-
-    # ============================
-    # Summary
-    # ============================
-
-    total = sum(len(v) for v in results.values())
-
-    print("\n\n================ SUMMARY ================")
-
-    print(f"Total artículos recolectados: {total}")
-
-    for level, items in results.items():
-        print(f"{level}: {len(items)} artículos")
-
-    # ============================
-    # Show sample
-    # ============================
-
-    print("\n\n================ SAMPLE ================")
-
-    for level, items in results.items():
-
-        if items:
-
-            print(f"\n{level} ejemplo:")
-            print(items[0])
+    test_crossref()

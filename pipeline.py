@@ -1,189 +1,266 @@
 import os
 import json
+import time
 import requests
 import webbrowser
 from xml.etree import ElementTree as ET
 from dotenv import load_dotenv
 from dict import SEARCH_QUERIES
+from filters import passes_filter
 
 # Cargar variables de entorno
 load_dotenv(dotenv_path="API_KEY.env")
 
-# Configuración de límites y credenciales
-MAX_RESULTS_PER_QUERY = 15
+
+TOTAL_RESULTS_PER_QUERY = 100
+BATCH_SIZE = 25
+
+
+SLEEP_BETWEEN_BATCHES = 0.5
 
 # API Keys
 ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
 SPRINGER_API_KEY = os.getenv("SPRINGER_META_API_KEY")
-CROSSREF_EMAIL = os.getenv("CROSSREF_POLITE_EMAIL", "tu_correo@ejemplo.com")
+CROSSREF_EMAIL = os.getenv("CROSSREF_POLITE_EMAIL", "ssabogal@unal.edu.co")
 
-# =====================================================================
-# Clientes de APIs
-# =====================================================================
 
 def fetch_crossref(query):
-    """Obtiene artículos de la API de Crossref para una query."""
+    """Obtiene artículos de Crossref, paginando con 'offset' hasta
+    TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados disponibles."""
     url = "https://api.crossref.org/works"
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
     }
-    params = {
-        "query": query,
-        "rows": MAX_RESULTS_PER_QUERY
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-        if response.status_code != 200:
-            print(f"[Crossref] Error {response.status_code} para la consulta.")
-            return []
-        
-        data = response.json()
-        items = data.get("message", {}).get("items", [])
-        
-        normalized = []
-        for item in items:
-            title = item.get("title", [""])[0] if item.get("title") else "Sin título"
-            doi = item.get("DOI", "").lower().strip()
-            journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
-            
-            # Autor
-            authors = item.get("author", [])
-            author = "Desconocido"
-            if authors:
-                given = authors[0].get("given", "")
-                family = authors[0].get("family", "")
-                author = f"{given} {family}".strip() or "Desconocido"
-                
-            # Año
-            year = ""
-            if "published-print" in item:
-                year = str(item["published-print"]["date-parts"][0][0])
-            elif "published-online" in item:
-                year = str(item["published-online"]["date-parts"][0][0])
-            
-            normalized.append({
-                "title": title,
-                "author": author,
-                "journal": journal,
-                "year": year,
-                "doi": doi,
-                "source": "Crossref"
-            })
-        return normalized
-    except Exception as e:
-        print(f"[Crossref] Falló la petición: {e}")
-        return []
+
+    normalized = []
+    offset = 0
+
+    while offset < TOTAL_RESULTS_PER_QUERY:
+        params = {
+            "query": query,
+            "rows": BATCH_SIZE,
+            "offset": offset
+        }
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+
+            if response.status_code == 429:
+                print(f"[Crossref] 429 en offset={offset}. Pausando 5s y saltando este lote.")
+                time.sleep(5)
+                offset += BATCH_SIZE  # avanzamos igual, para no quedar atascados en el mismo lote
+                continue
+
+            if response.status_code != 200:
+                print(f"[Crossref] Error {response.status_code} en offset={offset}. Se omite este lote.")
+                offset += BATCH_SIZE
+                continue
+
+            data = response.json()
+            message = data.get("message", {})
+            items = message.get("items", [])
+
+            # Si la API ya no devuelve items, no hay más que paginar.
+            if not items:
+                break
+
+            for item in items:
+                title = item.get("title", [""])[0] if item.get("title") else "Sin título"
+                doi = item.get("DOI", "").lower().strip()
+                journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
+
+                authors = item.get("author", [])
+                author = "Desconocido"
+                if authors:
+                    given = authors[0].get("given", "")
+                    family = authors[0].get("family", "")
+                    author = f"{given} {family}".strip() or "Desconocido"
+
+                year = ""
+                if "published-print" in item:
+                    year = str(item["published-print"]["date-parts"][0][0])
+                elif "published-online" in item:
+                    year = str(item["published-online"]["date-parts"][0][0])
+
+                normalized.append({
+                    "title": title,
+                    "author": author,
+                    "journal": journal,
+                    "year": year,
+                    "doi": doi,
+                    "source": "Crossref"
+                })
+
+            # Si Crossref reporta menos resultados totales de los que ya
+            # acumulamos, no tiene sentido seguir pidiendo más lotes.
+            total_results = message.get("total-results", 0)
+            if len(normalized) >= total_results:
+                break
+
+            offset += BATCH_SIZE
+            time.sleep(SLEEP_BETWEEN_BATCHES)
+
+        except Exception as e:
+            print(f"[Crossref] Falló la petición en offset={offset}: {e}")
+            offset += BATCH_SIZE
+            continue
+
+    return normalized
 
 
 def fetch_springer(query):
-    """Obtiene artículos de la API de Springer Nature."""
+    """Obtiene artículos de Springer, paginando con 's' (¡1-indexado!)
+    hasta TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados."""
     if not SPRINGER_API_KEY:
         print("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
-        
+
     url = "https://api.springernature.com/meta/v2/json"
-    params = {
-        "q": query,
-        "p": MAX_RESULTS_PER_QUERY,
-        "api_key": SPRINGER_API_KEY
-    }
-    
-    try:
-        response = requests.get(url, params=params, timeout=15)
-        if response.status_code != 200:
-            print(f"[Springer] Error {response.status_code} para la consulta.")
-            return []
-            
-        data = response.json()
-        records = data.get("records", [])
-        
-        normalized = []
-        for record in records:
-            title = record.get("title", "Sin título")
-            doi = record.get("doi", "").lower().strip()
-            journal = record.get("publicationName", "No disponible")
-            
-            # Autor
-            creators = record.get("creators", [])
-            author = creators[0].get("creator", "Desconocido") if creators else "Desconocido"
-            
-            # Año
-            pub_date = record.get("publicationDate", "")
-            year = pub_date[:4] if pub_date else ""
-            
-            normalized.append({
-                "title": title,
-                "author": author,
-                "journal": journal,
-                "year": year,
-                "doi": doi,
-                "source": "Springer"
-            })
-        return normalized
-    except Exception as e:
-        print(f"[Springer] Falló la petición: {e}")
-        return []
+
+    normalized = []
+    start = 1  # Springer empieza a contar en 1, no en 0
+
+    while (start - 1) < TOTAL_RESULTS_PER_QUERY:
+        params = {
+            "q": query,
+            "p": BATCH_SIZE,
+            "s": start,
+            "api_key": SPRINGER_API_KEY
+        }
+
+        try:
+            response = requests.get(url, params=params, timeout=15)
+
+            if response.status_code == 429:
+                print(f"[Springer] 429 en s={start}. Pausando 5s y saltando este lote.")
+                time.sleep(5)
+                start += BATCH_SIZE
+                continue
+
+            if response.status_code != 200:
+                print(f"[Springer] Error {response.status_code} en s={start}. Se omite este lote.")
+                start += BATCH_SIZE
+                continue
+
+            data = response.json()
+            records = data.get("records", [])
+
+            if not records:
+                break
+
+            for record in records:
+                title = record.get("title", "Sin título")
+                doi = record.get("doi", "").lower().strip()
+                journal = record.get("publicationName", "No disponible")
+
+                creators = record.get("creators", [])
+                author = creators[0].get("creator", "Desconocido") if creators else "Desconocido"
+
+                pub_date = record.get("publicationDate", "")
+                year = pub_date[:4] if pub_date else ""
+
+                normalized.append({
+                    "title": title,
+                    "author": author,
+                    "journal": journal,
+                    "year": year,
+                    "doi": doi,
+                    "source": "Springer"
+                })
+
+            # El total real disponible viene en result[0]["total"] (string)
+            result_info = data.get("result", [{}])
+            total_results = int(result_info[0].get("total", 0)) if result_info else 0
+            if len(normalized) >= total_results:
+                break
+
+            start += BATCH_SIZE
+            time.sleep(SLEEP_BETWEEN_BATCHES)
+
+        except Exception as e:
+            print(f"[Springer] Falló la petición en s={start}: {e}")
+            start += BATCH_SIZE
+            continue
+
+    return normalized
 
 
 def fetch_elsevier(query):
-    """Obtiene artículos de la API de Scopus (Elsevier)."""
+    """Obtiene artículos de Scopus (Elsevier), paginando con 'start'
+    hasta TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados."""
     if not ELSEVIER_API_KEY:
         print("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
-        
+
     url = "https://api.elsevier.com/content/search/scopus"
     headers = {
         "X-ELS-APIKey": ELSEVIER_API_KEY,
-        "Accept": "application/xml"
+        "Accept": "application/json"
     }
-    params = {
-        "query": query,
-        "count": MAX_RESULTS_PER_QUERY
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-        if response.status_code != 200:
-            print(f"[Elsevier] Error {response.status_code} para la consulta. Verifique si su API Key es correcta.")
-            return []
-            
-        root = ET.fromstring(response.content)
-        
-        # Namespaces XML de Elsevier
-        namespaces = {
-            "a": "http://www.w3.org/2005/Atom",
-            "dc": "http://purl.org/dc/elements/1.1/",
-            "prism": "http://prismstandard.org/namespaces/basic/2.0/"
+
+    normalized = []
+    start_index = 0
+
+    while start_index < TOTAL_RESULTS_PER_QUERY:
+        params = {
+            "query": query,
+            "count": BATCH_SIZE,
+            "start": start_index
         }
-        
-        entries = root.findall("a:entry", namespaces)
-        
-        normalized = []
-        for entry in entries:
-            title = entry.findtext("dc:title", default="Sin título", namespaces=namespaces)
-            author = entry.findtext("dc:creator", default="Desconocido", namespaces=namespaces)
-            journal = entry.findtext("prism:publicationName", default="No disponible", namespaces=namespaces)
-            
-            # Año
-            cover_date = entry.findtext("prism:coverDate", default="", namespaces=namespaces)
-            year = cover_date[:4] if cover_date else ""
-            
-            # DOI
-            doi = entry.findtext("prism:doi", default="", namespaces=namespaces).lower().strip()
-            
-            normalized.append({
-                "title": title,
-                "author": author,
-                "journal": journal,
-                "year": year,
-                "doi": doi,
-                "source": "Elsevier"
-            })
-        return normalized
-    except Exception as e:
-        print(f"[Elsevier] Falló la petición: {e}")
-        return []
+
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+
+            if response.status_code == 429:
+                print(f"[Elsevier] 429 en start={start_index}. Pausando 5s y saltando este lote.")
+                time.sleep(5)
+                start_index += BATCH_SIZE
+                continue
+
+            if response.status_code != 200:
+                print(f"[Elsevier] Error {response.status_code} en start={start_index}. Se omite este lote.")
+                start_index += BATCH_SIZE
+                continue
+
+            data = response.json()
+            search_results = data.get("search-results", {})
+            entries = search_results.get("entry", [])
+
+            if not entries or "error" in entries[0]:
+                break
+
+            for entry in entries:
+                title = entry.get("dc:title", "Sin título")
+                author = entry.get("dc:creator", "Desconocido")
+                journal = entry.get("prism:publicationName", "No disponible")
+
+                cover_date = entry.get("prism:coverDate", "")
+                year = cover_date[:4] if cover_date else ""
+
+                doi = entry.get("prism:doi", "").lower().strip()
+
+                normalized.append({
+                    "title": title,
+                    "author": author,
+                    "journal": journal,
+                    "year": year,
+                    "doi": doi,
+                    "source": "Elsevier"
+                })
+
+            total_results = int(search_results.get("opensearch:totalResults", 0))
+            if len(normalized) >= total_results:
+                break
+
+            start_index += BATCH_SIZE
+            time.sleep(SLEEP_BETWEEN_BATCHES)
+
+        except Exception as e:
+            print(f"[Elsevier] Falló la petición en start={start_index}: {e}")
+            start_index += BATCH_SIZE
+            continue
+
+    return normalized
 
 # =====================================================================
 # Generación de HTML Dashboard
@@ -192,7 +269,7 @@ def fetch_elsevier(query):
 def generate_dashboard(results):
     """Genera una página HTML moderna, elegante e interactiva con los resultados consolidado."""
     
-    # Calcular estadísticas rápidas
+ 
     total_articles = len(results)
     l1_count = sum(1 for r in results if r["level"] == "L1")
     l2_count = sum(1 for r in results if r["level"] == "L2")
@@ -753,7 +830,21 @@ def main():
             elsevier_articles = fetch_elsevier(q)
             
             # Mezclar todos los artículos de esta consulta
-            combined = crossref_articles + springer_articles + elsevier_articles
+            combined_raw = crossref_articles + springer_articles + elsevier_articles
+
+            # --- Filtro de validación posterior ---
+            # No confiamos en que la query haya filtrado correctamente
+            # (confirmado empíricamente: Crossref ignora AND/OR y trae
+            # ruido de dominios no relacionados). Verificamos el título
+            # de cada artículo contra la lógica real del nivel.
+            combined = [art for art in combined_raw if passes_filter(art, level)]
+            rejected_items = [art for art in combined_raw if not passes_filter(art, level)]
+
+            if rejected_items:
+                rejected_by_source = {}
+                for art in rejected_items:
+                    rejected_by_source[art["source"]] = rejected_by_source.get(art["source"], 0) + 1
+                print(f"    [Filtro] Rechazados: {len(rejected_items)}/{len(combined_raw)} -> {rejected_by_source}")
             
             new_additions_count = 0
             duplicates_count = 0
