@@ -1,12 +1,7 @@
 """
 filters.py
 ==========
-Filtro de validación posterior. Las queries enviadas a Crossref no
-garantizan boolean retrieval real (ver evidencia empírica discutida:
-resultados de geología, neurociencia, etc. colándose en L2). Este
-módulo aplica, sobre el TEXTO YA RECIBIDO, la misma lógica AND/OR que
-se intentó imponer en la query original — pero esta vez verificada,
-no asumida.
+
 """
 
 import re

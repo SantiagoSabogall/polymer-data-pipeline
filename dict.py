@@ -3,25 +3,13 @@
 # Polymer + Packaging Literature
 # ================================
 
-# -------------------------------
-# Raw term lists
-# -------------------------------
-# IMPORTANTE: estas listas ahora cumplen DOBLE función:
-#   1. Documentación legible de qué significa cada bloque lógico.
-#   2. Input directo del filtro de validación posterior (ver filters.py).
-#
-# Por eso deben coincidir exactamente con los términos usados en los
-# bloques A-E más abajo. Si agregas un sinónimo a un bloque lógico,
-# agrégalo también aquí, o el filtro será más estricto que tu búsqueda.
-#
-# Los términos terminados en "*" se interpretan como prefijo:
-# "blend*" coincide con "blend", "blends", "blending", etc.
+
 
 POLYESTER_TERMS = [
     "polyester*",
     "PET",
     "polyethylene terephthalate",
-    "poly(ethylene terephthalate)",  # nomenclatura IUPAC con paréntesis
+    "poly(ethylene terephthalate)",  
     "copolyester*",
     "co-polyester*"
 ]
@@ -125,13 +113,7 @@ L4_QUERIES = [
 ]
 
 
-# -------------------------------
-# Reglas del filtro de validación posterior
-# -------------------------------
-# Cada nivel exige que el título contenga AL MENOS UN término de CADA
-# lista (lógica AND entre listas, OR dentro de cada lista) — el mismo
-# razonamiento de los bloques A-E, pero verificado sobre el texto real
-# del resultado, no sobre la query enviada a la API.
+
 LEVEL_FILTER_RULES = {
     "L1": [POLYESTER_TERMS, BLEND_TERMS, BARRIER_TERMS],
     "L2": [POLYESTER_TERMS, ADDITIVE_TERMS, BARRIER_TERMS],

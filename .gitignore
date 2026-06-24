@@ -151,6 +151,7 @@ activemq-data/
 .env
 ELSEVIER_API.env
 API_KEY.env
+API_KEY.envrc
 .envrc
 .venv
 env/
