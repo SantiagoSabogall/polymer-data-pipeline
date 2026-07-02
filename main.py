@@ -1,6 +1,9 @@
-from dict import SEARCH_QUERIES
+import sys
+from pathlib import Path
 
-for level, queries in SEARCH_QUERIES.items():
-    print("\n", level)
-    for q in queries:
-        print(" -", q)
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from polymer_pipeline.pipeline import main
+
+if __name__ == "__main__":
+    main()

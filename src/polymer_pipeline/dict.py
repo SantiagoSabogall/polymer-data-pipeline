@@ -1,17 +1,10 @@
-# ================================
-# Semantic Search Dictionary
-# Polymer + Packaging Literature
-# ================================
-
-
-
 POLYESTER_TERMS = [
     "polyester*",
     "PET",
     "polyethylene terephthalate",
-    "poly(ethylene terephthalate)",  
+    "poly(ethylene terephthalate)",
     "copolyester*",
-    "co-polyester*"
+    "co-polyester*",
 ]
 
 BARRIER_TERMS = [
@@ -26,14 +19,14 @@ BARRIER_TERMS = [
     "high barrier",
     "oxygen barrier",
     "gas barrier",
-    "water vapor barrier"
+    "water vapor barrier",
 ]
 
 PACKAGING_TERMS = [
     "packaging",
     "film*",
     "package*",
-    "pack"
+    "pack",
 ]
 
 BIOPOLYMER_TERMS = [
@@ -45,7 +38,7 @@ BIOPOLYMER_TERMS = [
     "poly(lactic acid)",
     "polylactic acid",
     "poly(butylene adipate-co-terephthalate)",
-    "polyhydroxybutyrate"
+    "polyhydroxybutyrate",
 ]
 
 ADDITIVE_TERMS = [
@@ -60,59 +53,27 @@ ADDITIVE_TERMS = [
     "silica",
     "graphene",
     "cellulose",
-    "nanocrystal*"
+    "nanocrystal*",
 ]
 
 BLEND_TERMS = [
     "blend*",
     "copolymer*",
     "co-polyester*",
-    "copolyester*"
+    "copolyester*",
 ]
 
-
-# -------------------------------
-# Logical query blocks (MAIN SYSTEM)
-# -------------------------------
-# A: Polyesters (Poliesteres comunes y nombres específicos)
 A = '(polyester OR polyesters OR PET OR "polyethylene terephthalate")'
-
-# B: High Barrier (Propiedades de barrera y tasas de transmisión)
 B = '("high barrier" OR "oxygen barrier" OR "gas barrier" OR "water vapor barrier" OR WVTR OR OTR)'
-
-# C: Packaging and films (Aplicación de empaque)
 C = '(packaging OR films OR "food packaging" OR "flexible packaging")'
-
-# D: Biopolymers (Polímeros biodegradables específicos)
 D = '(PBAT OR PLA OR PHB OR biopolymer* OR biopolyester*)'
-
-# E1: Blends (Exclusivo Level 1)
 E_blends = '(blend* OR copolymer* OR co-polyester* OR "polymer blend*")'
-
-# E2: Additives & Fillers (Exclusivo Level 2)
 E_additives = '(additive* OR filler* OR nanoparticle* OR composite* OR nanocomposite* OR clay*)'
 
-
-# -------------------------------
-# Deterministic query levels
-# -------------------------------
-L1_QUERIES = [
-    f"{A} AND {E_blends} AND {B}"
-]
-
-L2_QUERIES = [
-    f"{A} AND {E_additives} AND {B}"
-]
-
-L3_QUERIES = [
-    f"{C} AND {B} AND {A}"
-]
-
-L4_QUERIES = [
-    f"{D} AND {B} AND {C}"
-]
-
-
+L1_QUERIES = [f"{A} AND {E_blends} AND {B}"]
+L2_QUERIES = [f"{A} AND {E_additives} AND {B}"]
+L3_QUERIES = [f"{C} AND {B} AND {A}"]
+L4_QUERIES = [f"{D} AND {B} AND {C}"]
 
 LEVEL_FILTER_RULES = {
     "L1": [POLYESTER_TERMS, BLEND_TERMS, BARRIER_TERMS],
@@ -121,14 +82,9 @@ LEVEL_FILTER_RULES = {
     "L4": [BIOPOLYMER_TERMS, BARRIER_TERMS, PACKAGING_TERMS],
 }
 
-
-# -------------------------------
-# Export structure
-# -------------------------------
-
 SEARCH_QUERIES = {
     "L1": L1_QUERIES,
     "L2": L2_QUERIES,
     "L3": L3_QUERIES,
-    "L4": L4_QUERIES
+    "L4": L4_QUERIES,
 }

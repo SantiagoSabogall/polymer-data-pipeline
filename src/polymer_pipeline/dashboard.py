@@ -1,287 +1,42 @@
-import os
 import json
-import time
-import requests
-import webbrowser
-from xml.etree import ElementTree as ET
-from dotenv import load_dotenv
-from dict import SEARCH_QUERIES
-from filters import passes_filter
-
-# Cargar variables de entorno
-load_dotenv(dotenv_path="API_KEY.env")
 
 
-TOTAL_RESULTS_PER_QUERY = 100
-BATCH_SIZE = 25
-
-
-SLEEP_BETWEEN_BATCHES = 0.5
-
-# API Keys
-ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
-SPRINGER_API_KEY = os.getenv("SPRINGER_META_API_KEY")
-CROSSREF_EMAIL = os.getenv("CROSSREF_POLITE_EMAIL", "ssabogal@unal.edu.co")
-
-
-def fetch_crossref(query):
-    """Obtiene artículos de Crossref, paginando con 'offset' hasta
-    TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados disponibles."""
-    url = "https://api.crossref.org/works"
-    headers = {
-        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
-    }
-
-    normalized = []
-    offset = 0
-
-    while offset < TOTAL_RESULTS_PER_QUERY:
-        params = {
-            "query": query,
-            "rows": BATCH_SIZE,
-            "offset": offset
-        }
-
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-
-            if response.status_code == 429:
-                print(f"[Crossref] 429 en offset={offset}. Pausando 5s y saltando este lote.")
-                time.sleep(5)
-                offset += BATCH_SIZE  # avanzamos igual, para no quedar atascados en el mismo lote
-                continue
-
-            if response.status_code != 200:
-                print(f"[Crossref] Error {response.status_code} en offset={offset}. Se omite este lote.")
-                offset += BATCH_SIZE
-                continue
-
-            data = response.json()
-            message = data.get("message", {})
-            items = message.get("items", [])
-
-            # Si la API ya no devuelve items, no hay más que paginar.
-            if not items:
-                break
-
-            for item in items:
-                title = item.get("title", [""])[0] if item.get("title") else "Sin título"
-                doi = item.get("DOI", "").lower().strip()
-                journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
-
-                authors = item.get("author", [])
-                author = "Desconocido"
-                if authors:
-                    given = authors[0].get("given", "")
-                    family = authors[0].get("family", "")
-                    author = f"{given} {family}".strip() or "Desconocido"
-
-                year = ""
-                if "published-print" in item:
-                    year = str(item["published-print"]["date-parts"][0][0])
-                elif "published-online" in item:
-                    year = str(item["published-online"]["date-parts"][0][0])
-
-                normalized.append({
-                    "title": title,
-                    "author": author,
-                    "journal": journal,
-                    "year": year,
-                    "doi": doi,
-                    "source": "Crossref"
-                })
-
-            # Si Crossref reporta menos resultados totales de los que ya
-            # acumulamos, no tiene sentido seguir pidiendo más lotes.
-            total_results = message.get("total-results", 0)
-            if len(normalized) >= total_results:
-                break
-
-            offset += BATCH_SIZE
-            time.sleep(SLEEP_BETWEEN_BATCHES)
-
-        except Exception as e:
-            print(f"[Crossref] Falló la petición en offset={offset}: {e}")
-            offset += BATCH_SIZE
-            continue
-
-    return normalized
-
-
-def fetch_springer(query):
-    """Obtiene artículos de Springer, paginando con 's' (¡1-indexado!)
-    hasta TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados."""
-    if not SPRINGER_API_KEY:
-        print("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
-        return []
-
-    url = "https://api.springernature.com/meta/v2/json"
-
-    normalized = []
-    start = 1  # Springer empieza a contar en 1, no en 0
-
-    while (start - 1) < TOTAL_RESULTS_PER_QUERY:
-        params = {
-            "q": query,
-            "p": BATCH_SIZE,
-            "s": start,
-            "api_key": SPRINGER_API_KEY
-        }
-
-        try:
-            response = requests.get(url, params=params, timeout=15)
-
-            if response.status_code == 429:
-                print(f"[Springer] 429 en s={start}. Pausando 5s y saltando este lote.")
-                time.sleep(5)
-                start += BATCH_SIZE
-                continue
-
-            if response.status_code != 200:
-                print(f"[Springer] Error {response.status_code} en s={start}. Se omite este lote.")
-                start += BATCH_SIZE
-                continue
-
-            data = response.json()
-            records = data.get("records", [])
-
-            if not records:
-                break
-
-            for record in records:
-                title = record.get("title", "Sin título")
-                doi = record.get("doi", "").lower().strip()
-                journal = record.get("publicationName", "No disponible")
-
-                creators = record.get("creators", [])
-                author = creators[0].get("creator", "Desconocido") if creators else "Desconocido"
-
-                pub_date = record.get("publicationDate", "")
-                year = pub_date[:4] if pub_date else ""
-
-                normalized.append({
-                    "title": title,
-                    "author": author,
-                    "journal": journal,
-                    "year": year,
-                    "doi": doi,
-                    "source": "Springer"
-                })
-
-            # El total real disponible viene en result[0]["total"] (string)
-            result_info = data.get("result", [{}])
-            total_results = int(result_info[0].get("total", 0)) if result_info else 0
-            if len(normalized) >= total_results:
-                break
-
-            start += BATCH_SIZE
-            time.sleep(SLEEP_BETWEEN_BATCHES)
-
-        except Exception as e:
-            print(f"[Springer] Falló la petición en s={start}: {e}")
-            start += BATCH_SIZE
-            continue
-
-    return normalized
-
-
-def fetch_elsevier(query):
-    """Obtiene artículos de Scopus (Elsevier), paginando con 'start'
-    hasta TOTAL_RESULTS_PER_QUERY o hasta agotar los resultados."""
-    if not ELSEVIER_API_KEY:
-        print("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
-        return []
-
-    url = "https://api.elsevier.com/content/search/scopus"
-    headers = {
-        "X-ELS-APIKey": ELSEVIER_API_KEY,
-        "Accept": "application/json"
-    }
-
-    normalized = []
-    start_index = 0
-
-    while start_index < TOTAL_RESULTS_PER_QUERY:
-        params = {
-            "query": query,
-            "count": BATCH_SIZE,
-            "start": start_index
-        }
-
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=15)
-
-            if response.status_code == 429:
-                print(f"[Elsevier] 429 en start={start_index}. Pausando 5s y saltando este lote.")
-                time.sleep(5)
-                start_index += BATCH_SIZE
-                continue
-
-            if response.status_code != 200:
-                print(f"[Elsevier] Error {response.status_code} en start={start_index}. Se omite este lote.")
-                start_index += BATCH_SIZE
-                continue
-
-            data = response.json()
-            search_results = data.get("search-results", {})
-            entries = search_results.get("entry", [])
-
-            if not entries or "error" in entries[0]:
-                break
-
-            for entry in entries:
-                title = entry.get("dc:title", "Sin título")
-                author = entry.get("dc:creator", "Desconocido")
-                journal = entry.get("prism:publicationName", "No disponible")
-
-                cover_date = entry.get("prism:coverDate", "")
-                year = cover_date[:4] if cover_date else ""
-
-                doi = entry.get("prism:doi", "").lower().strip()
-
-                normalized.append({
-                    "title": title,
-                    "author": author,
-                    "journal": journal,
-                    "year": year,
-                    "doi": doi,
-                    "source": "Elsevier"
-                })
-
-            total_results = int(search_results.get("opensearch:totalResults", 0))
-            if len(normalized) >= total_results:
-                break
-
-            start_index += BATCH_SIZE
-            time.sleep(SLEEP_BETWEEN_BATCHES)
-
-        except Exception as e:
-            print(f"[Elsevier] Falló la petición en start={start_index}: {e}")
-            start_index += BATCH_SIZE
-            continue
-
-    return normalized
-
-# =====================================================================
-# Generación de HTML Dashboard
-# =====================================================================
-
-def generate_dashboard(results):
-    """Genera una página HTML moderna, elegante e interactiva con los resultados consolidado."""
-    
- 
+def generate_dashboard(results, plots=None):
+    if plots is None:
+        plots = {}
     total_articles = len(results)
     l1_count = sum(1 for r in results if r["level"] == "L1")
     l2_count = sum(1 for r in results if r["level"] == "L2")
     l3_count = sum(1 for r in results if r["level"] == "L3")
     l4_count = sum(1 for r in results if r["level"] == "L4")
-    
-    crossref_count = sum(1 for r in results if r["source"] == "Crossref")
-    springer_count = sum(1 for r in results if r["source"] == "Springer")
-    elsevier_count = sum(1 for r in results if r["source"] == "Elsevier")
 
-    # Serializar resultados a JSON de forma segura para usar en Javascript
+    pubmed_count   = sum(1 for r in results if r["source"] == "PubMed")
+    chemrxiv_count = sum(1 for r in results if r["source"] == "ChemRxiv")
+
     results_json = json.dumps(results, ensure_ascii=False)
+
+    chart_titles = {
+        "year":     "Evolución de Publicaciones por Año",
+        "journals": "Top 10 Revistas",
+        "keywords": "Palabras Clave en Títulos",
+        "sources":  "Distribución por Fuente",
+    }
+    charts_section_html = ""
+    if plots:
+        cards_html = ""
+        for key, b64 in plots.items():
+            title = chart_titles.get(key, key)
+            cards_html += f'''
+        <div class="chart-card">
+            <div class="chart-title">{title}</div>
+            <img src="data:image/png;base64,{b64}" alt="{title}" class="chart-img">
+        </div>'''
+        charts_section_html = f'''
+    <div class="charts-section">
+        <div class="section-title">Analisis Visual</div>
+        <div class="charts-grid">{cards_html}
+        </div>
+    </div>'''
 
     html_content = f"""<!DOCTYPE html>
 <html lang="es">
@@ -299,15 +54,17 @@ def generate_dashboard(results):
             --text-muted: #94a3b8;
             --accent-primary: #38bdf8;
             --accent-glow: rgba(56, 189, 248, 0.15);
-            
+
             --badge-l1: #10b981;
             --badge-l2: #f59e0b;
             --badge-l3: #3b82f6;
             --badge-l4: #ec4899;
-            
+
             --source-crossref: #8b5cf6;
             --source-springer: #f43f5e;
             --source-elsevier: #0ea5e9;
+            --source-pubmed: #22c55e;
+            --source-chemrxiv: #fb923c;
         }}
 
         * {{
@@ -411,7 +168,6 @@ def generate_dashboard(results):
             margin-top: 0.5rem;
         }}
 
-        /* Seccion de Control y Busqueda */
         .controls-card {{
             background: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -493,7 +249,6 @@ def generate_dashboard(results):
             font-weight: 600;
         }}
 
-        /* Tabla de Resultados */
         .results-container {{
             background: var(--card-bg);
             border: 1px solid var(--border-color);
@@ -560,7 +315,6 @@ def generate_dashboard(results):
             text-decoration: underline;
         }}
 
-        /* Badges de Lógica */
         .badge {{
             display: inline-block;
             padding: 0.35rem 0.7rem;
@@ -577,9 +331,11 @@ def generate_dashboard(results):
         .badge.l3 {{ background: rgba(59, 130, 246, 0.15); color: var(--badge-l3); border: 1px solid rgba(59, 130, 246, 0.3); }}
         .badge.l4 {{ background: rgba(236, 72, 153, 0.15); color: var(--badge-l4); border: 1px solid rgba(236, 72, 153, 0.3); }}
 
-        .badge.src-crossref {{ background: rgba(139, 92, 246, 0.15); color: var(--source-crossref); border: 1px solid rgba(139, 92, 246, 0.3); }}
-        .badge.src-springer {{ background: rgba(244, 63, 94, 0.15); color: var(--source-springer); border: 1px solid rgba(244, 63, 94, 0.3); }}
-        .badge.src-elsevier {{ background: rgba(14, 165, 233, 0.15); color: var(--source-elsevier); border: 1px solid rgba(14, 165, 233, 0.3); }}
+        .badge.src-crossref  {{ background: rgba(139, 92, 246, 0.15); color: var(--source-crossref);  border: 1px solid rgba(139, 92, 246, 0.3); }}
+        .badge.src-springer  {{ background: rgba(244, 63, 94, 0.15);  color: var(--source-springer);  border: 1px solid rgba(244, 63, 94, 0.3);  }}
+        .badge.src-elsevier  {{ background: rgba(14, 165, 233, 0.15); color: var(--source-elsevier);  border: 1px solid rgba(14, 165, 233, 0.3); }}
+        .badge.src-pubmed    {{ background: rgba(34, 197, 94, 0.15);  color: var(--source-pubmed);    border: 1px solid rgba(34, 197, 94, 0.3);  }}
+        .badge.src-chemrxiv  {{ background: rgba(251, 146, 60, 0.15); color: var(--source-chemrxiv);  border: 1px solid rgba(251, 146, 60, 0.3); }}
 
         .empty-state {{
             padding: 4rem 2rem;
@@ -592,7 +348,6 @@ def generate_dashboard(results):
             margin-bottom: 0.5rem;
         }}
 
-        /* Responsive Layout */
         @media (max-width: 768px) {{
             body {{
                 padding: 1rem;
@@ -604,6 +359,56 @@ def generate_dashboard(results):
             .filter-group {{
                 justify-content: flex-start;
             }}
+        }}
+
+        .charts-section {{
+            margin-bottom: 2rem;
+        }}
+
+        .section-title {{
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 1.2rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border-color);
+            letter-spacing: -0.3px;
+        }}
+
+        .charts-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 1.5rem;
+        }}
+
+        .chart-card {{
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }}
+
+        .chart-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px var(--accent-glow);
+        }}
+
+        .chart-title {{
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+        }}
+
+        .chart-img {{
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
         }}
     </style>
 </head>
@@ -617,7 +422,6 @@ def generate_dashboard(results):
         </div>
     </header>
 
-    <!-- Indicadores de métricas -->
     <div class="stats-grid">
         <div class="stat-card">
             <div class="label">Total Artículos</div>
@@ -639,15 +443,24 @@ def generate_dashboard(results):
             <div class="label">Level 4 (Biodegradables)</div>
             <div class="value" id="stat-l4">{l4_count}</div>
         </div>
+        <div class="stat-card" style="--accent-primary:var(--source-pubmed)">
+            <div class="label">PubMed</div>
+            <div class="value" style="color:var(--source-pubmed)">{pubmed_count}</div>
+        </div>
+        <div class="stat-card" style="--accent-primary:var(--source-chemrxiv)">
+            <div class="label">ChemRxiv</div>
+            <div class="value" style="color:var(--source-chemrxiv)">{chemrxiv_count}</div>
+        </div>
     </div>
 
-    <!-- Controles interactivos -->
+    {charts_section_html}
+
     <div class="controls-card">
         <div class="search-row">
             <div class="search-box">
                 <input type="text" id="search-input" placeholder="Buscar por título, autor, revista, DOI..." oninput="filterData()">
             </div>
-            
+
             <div class="filter-group">
                 <button class="filter-btn active" id="btn-all-lvl" onclick="filterLevel('ALL', this)">Todos los Niveles</button>
                 <button class="filter-btn" onclick="filterLevel('L1', this)">Level 1</button>
@@ -661,11 +474,12 @@ def generate_dashboard(results):
                 <button class="filter-btn" onclick="filterSource('Crossref', this)">Crossref</button>
                 <button class="filter-btn" onclick="filterSource('Springer', this)">Springer</button>
                 <button class="filter-btn" onclick="filterSource('Elsevier', this)">Elsevier</button>
+                <button class="filter-btn" onclick="filterSource('PubMed', this)">PubMed</button>
+                <button class="filter-btn" onclick="filterSource('ChemRxiv', this)">ChemRxiv</button>
             </div>
         </div>
     </div>
 
-    <!-- Tabla principal -->
     <div class="results-container">
         <div class="table-scroll">
             <table id="articles-table">
@@ -681,7 +495,6 @@ def generate_dashboard(results):
                     </tr>
                 </thead>
                 <tbody id="table-body">
-                    <!-- Los datos se inyectarán de forma dinámica mediante JavaScript -->
                 </tbody>
             </table>
         </div>
@@ -693,7 +506,6 @@ def generate_dashboard(results):
 </div>
 
 <script>
-    // Inyección de los resultados unificados
     const dataset = {results_json};
 
     let activeLevel = 'ALL';
@@ -718,17 +530,14 @@ def generate_dashboard(results):
         data.forEach(item => {{
             const tr = document.createElement("tr");
 
-            // Nivel badge
             const levelClass = item.level.toLowerCase();
             const levelBadge = `<span class="badge ${{levelClass}}">${{item.level}}</span>`;
 
-            // Fuente badge
             const sourceClass = `src-${{item.source.toLowerCase()}}`;
             const sourceBadge = `<span class="badge ${{sourceClass}}">${{item.source}}</span>`;
 
-            // DOI link
-            const doiHtml = item.doi 
-                ? `<a class="doi-link" href="https://doi.org/${{item.doi}}" target="_blank">🔗 ${{item.doi}}</a>` 
+            const doiHtml = item.doi
+                ? `<a class="doi-link" href="https://doi.org/${{item.doi}}" target="_blank">🔗 ${{item.doi}}</a>`
                 : '<span style="color:var(--text-muted); font-style:italic;">No disponible</span>';
 
             tr.innerHTML = `
@@ -745,7 +554,6 @@ def generate_dashboard(results):
     }}
 
     function filterLevel(level, btn) {{
-        // Limpiar estilos de botones de nivel
         const buttons = btn.parentElement.querySelectorAll(".filter-btn");
         buttons.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
@@ -755,7 +563,6 @@ def generate_dashboard(results):
     }}
 
     function filterSource(source, btn) {{
-        // Limpiar estilos de botones de fuente
         const buttons = btn.parentElement.querySelectorAll(".filter-btn");
         buttons.forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
@@ -770,8 +577,8 @@ def generate_dashboard(results):
         const filtered = dataset.filter(item => {{
             const matchesLevel = activeLevel === 'ALL' || item.level === activeLevel;
             const matchesSource = activeSource === 'ALL' || item.source === activeSource;
-            
-            const matchesSearch = !searchQuery || 
+
+            const matchesSearch = !searchQuery ||
                 item.title.toLowerCase().includes(searchQuery) ||
                 item.author.toLowerCase().includes(searchQuery) ||
                 item.journal.toLowerCase().includes(searchQuery) ||
@@ -780,7 +587,6 @@ def generate_dashboard(results):
             return matchesLevel && matchesSource && matchesSearch;
         }});
 
-        // Actualizar contadores
         document.getElementById("stat-total").innerText = filtered.length;
         document.getElementById("stat-l1").innerText = filtered.filter(i => i.level === 'L1').length;
         document.getElementById("stat-l2").innerText = filtered.filter(i => i.level === 'L2').length;
@@ -790,7 +596,6 @@ def generate_dashboard(results):
         renderTable(filtered);
     }}
 
-    // Iniciar
     window.onload = initTable;
 </script>
 
@@ -798,90 +603,3 @@ def generate_dashboard(results):
 </html>
 """
     return html_content
-
-# =====================================================================
-# Pipeline de Ejecución Principal
-# =====================================================================
-
-def main():
-    print("=" * 60)
-    print(" INICIANDO PIPELINE DE BÚSQUEDA CIENTÍFICA CONSOLIDADA ")
-    print("=" * 60)
-    
-    seen_dois = set()
-    all_normalized_articles = []
-    
-    for level, queries in SEARCH_QUERIES.items():
-        print(f"\n>>> Procesando nivel: {level}")
-        
-        for q in queries:
-            print(f"  Consulta: {q[:80]}...")
-            
-            # 1. Búsqueda en Crossref
-            print("    [1/3] Descargando de Crossref...")
-            crossref_articles = fetch_crossref(q)
-            
-            # 2. Búsqueda en Springer
-            print("    [2/3] Descargando de Springer...")
-            springer_articles = fetch_springer(q)
-            
-            # 3. Búsqueda en Elsevier
-            print("    [3/3] Descargando de Elsevier...")
-            elsevier_articles = fetch_elsevier(q)
-            
-            # Mezclar todos los artículos de esta consulta
-            combined_raw = crossref_articles + springer_articles + elsevier_articles
-
-            # --- Filtro de validación posterior ---
-            # No confiamos en que la query haya filtrado correctamente
-            # (confirmado empíricamente: Crossref ignora AND/OR y trae
-            # ruido de dominios no relacionados). Verificamos el título
-            # de cada artículo contra la lógica real del nivel.
-            combined = [art for art in combined_raw if passes_filter(art, level)]
-            rejected_items = [art for art in combined_raw if not passes_filter(art, level)]
-
-            if rejected_items:
-                rejected_by_source = {}
-                for art in rejected_items:
-                    rejected_by_source[art["source"]] = rejected_by_source.get(art["source"], 0) + 1
-                print(f"    [Filtro] Rechazados: {len(rejected_items)}/{len(combined_raw)} -> {rejected_by_source}")
-            
-            new_additions_count = 0
-            duplicates_count = 0
-            
-            for art in combined:
-                doi = art["doi"]
-                
-                # Regla de deduplicación: si tiene DOI, se filtra por DOI.
-                # Si no tiene DOI (raro pero posible), se filtra por título.
-                identifier = doi if doi else art["title"].lower().strip()
-                
-                if identifier not in seen_dois:
-                    seen_dois.add(identifier)
-                    art["level"] = level
-                    all_normalized_articles.append(art)
-                    new_additions_count += 1
-                else:
-                    duplicates_count += 1
-                    
-            print(f"  --> Agregados: {new_additions_count} nuevos | Duplicados omitidos: {duplicates_count}")
-
-    # Guardar a JSON consolidado
-    json_output_path = "consolidated_results.json"
-    with open(json_output_path, "w", encoding="utf-8") as f:
-        json.dump(all_normalized_articles, f, indent=4, ensure_ascii=False)
-    print(f"\n[Éxito] Se guardaron {len(all_normalized_articles)} artículos unificados en {json_output_path}")
-
-    # Generar Dashboard HTML
-    html_content = generate_dashboard(all_normalized_articles)
-    html_output_path = "dashboard.html"
-    with open(html_output_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-    print(f"[Éxito] Dashboard interactivo generado en {html_output_path}")
-    
-    # Abrir en navegador
-    webbrowser.open(html_output_path)
-    print("\n¡Proceso finalizado con éxito!")
-
-if __name__ == "__main__":
-    main()
