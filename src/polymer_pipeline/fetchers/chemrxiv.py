@@ -1,6 +1,8 @@
 import time
 import requests
 
+from polymer_pipeline.cache import get_cached, set_cache
+
 
 CHEMRXIV_MEMBER_ID = "4917"
 
@@ -8,6 +10,12 @@ CHEMRXIV_MEMBER_ID = "4917"
 def fetch_chemrxiv(query: str, max_results: int = 100,
                    email: str = "ssabogal@unal.edu.co",
                    sleep: float = 0.5) -> list:
+    cache_key = f"ChemRxiv:{query}"
+    cached = get_cached(cache_key)
+    if cached is not None:
+        print(f"[ChemRxiv] Usando cache para: {query[:60]}...")
+        return cached
+
     url = "https://api.crossref.org/works"
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{email})"
@@ -88,4 +96,5 @@ def fetch_chemrxiv(query: str, max_results: int = 100,
             offset += rows
             continue
 
+    set_cache(cache_key, normalized)
     return normalized

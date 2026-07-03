@@ -217,5 +217,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Cache directory
+.cache/
+
+# Pipeline output files
+consolidated_results.json
+consolidated_results.csv
+consolidated_results.bib
+dashboard.html
+
 # Streamlit
 .streamlit/secrets.toml

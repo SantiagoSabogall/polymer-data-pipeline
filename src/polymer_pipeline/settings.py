@@ -10,3 +10,4 @@ SLEEP_BETWEEN_BATCHES = 0.5
 ELSEVIER_API_KEY = os.getenv("ELSEVIER_API_KEY")
 SPRINGER_API_KEY = os.getenv("SPRINGER_META_API_KEY")
 CROSSREF_EMAIL = os.getenv("CROSSREF_POLITE_EMAIL", "ssabogal@unal.edu.co")
+NCBI_EMAIL = os.getenv("NCBI_EMAIL", "ssabogal@unal.edu.co")

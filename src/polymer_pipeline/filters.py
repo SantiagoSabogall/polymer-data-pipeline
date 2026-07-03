@@ -11,7 +11,8 @@ from polymer_pipeline.dict import (
 
 
 def _term_to_pattern(term):
-    if term.endswith("*"):
+    is_wildcard = term.endswith("*")
+    if is_wildcard:
         base = term[:-1]
         pattern = re.escape(base) + r"\w*"
     else:
@@ -19,7 +20,7 @@ def _term_to_pattern(term):
         pattern = re.escape(base)
 
     leading = r"\b" if base[:1].isalnum() else ""
-    trailing = r"\b" if base[-1:].isalnum() else ""
+    trailing = r"\b" if not is_wildcard and base[-1:].isalnum() else ""
     return leading + pattern + trailing
 
 

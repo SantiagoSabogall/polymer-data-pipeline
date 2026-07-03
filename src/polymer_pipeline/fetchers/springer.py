@@ -4,9 +4,16 @@ from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, SPRINGER_API_KEY,
 )
+from polymer_pipeline.cache import get_cached, set_cache
 
 
 def fetch_springer(query):
+    cache_key = f"Springer:{query}"
+    cached = get_cached(cache_key)
+    if cached is not None:
+        print(f"[Springer] Usando cache para: {query[:60]}...")
+        return cached
+
     if not SPRINGER_API_KEY:
         print("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
@@ -77,4 +84,5 @@ def fetch_springer(query):
             start += BATCH_SIZE
             continue
 
+    set_cache(cache_key, normalized)
     return normalized

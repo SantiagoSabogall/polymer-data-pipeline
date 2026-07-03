@@ -4,9 +4,16 @@ from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
 )
+from polymer_pipeline.cache import get_cached, set_cache
 
 
 def fetch_crossref(query):
+    cache_key = f"Crossref:{query}"
+    cached = get_cached(cache_key)
+    if cached is not None:
+        print(f"[Crossref] Usando cache para: {query[:60]}...")
+        return cached
+
     url = "https://api.crossref.org/works"
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
@@ -82,4 +89,5 @@ def fetch_crossref(query):
             offset += BATCH_SIZE
             continue
 
+    set_cache(cache_key, normalized)
     return normalized

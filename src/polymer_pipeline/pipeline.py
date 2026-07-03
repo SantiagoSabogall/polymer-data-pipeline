@@ -22,6 +22,7 @@ def main():
     print("=" * 60)
 
     seen_dois = set()
+    seen_titles = set()
     all_normalized_articles = []
 
     for level, queries in SEARCH_QUERIES.items():
@@ -53,10 +54,15 @@ def main():
 
             for art in combined:
                 doi = art["doi"]
-                identifier = doi if doi else art["title"].lower().strip()
+                title = art["title"].lower().strip()
 
-                if identifier not in seen_dois:
-                    seen_dois.add(identifier)
+                if doi and doi not in seen_dois:
+                    seen_dois.add(doi)
+                    art["level"] = level
+                    all_normalized_articles.append(art)
+                    new_additions_count += 1
+                elif not doi and title not in seen_titles:
+                    seen_titles.add(title)
                     art["level"] = level
                     all_normalized_articles.append(art)
                     new_additions_count += 1

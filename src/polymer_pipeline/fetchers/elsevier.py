@@ -4,9 +4,16 @@ from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, ELSEVIER_API_KEY,
 )
+from polymer_pipeline.cache import get_cached, set_cache
 
 
 def fetch_elsevier(query):
+    cache_key = f"Elsevier:{query}"
+    cached = get_cached(cache_key)
+    if cached is not None:
+        print(f"[Elsevier] Usando cache para: {query[:60]}...")
+        return cached
+
     if not ELSEVIER_API_KEY:
         print("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
@@ -79,4 +86,5 @@ def fetch_elsevier(query):
             start_index += BATCH_SIZE
             continue
 
+    set_cache(cache_key, normalized)
     return normalized

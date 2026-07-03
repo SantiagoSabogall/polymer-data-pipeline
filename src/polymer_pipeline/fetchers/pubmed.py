@@ -1,16 +1,24 @@
-import os
 import requests
 import xml.etree.ElementTree as ET
 
+from polymer_pipeline.settings import NCBI_EMAIL
+from polymer_pipeline.cache import get_cached, set_cache
+
 
 def fetch_pubmed(query: str, max_results: int = 100):
+    cache_key = f"PubMed:{query}"
+    cached = get_cached(cache_key)
+    if cached is not None:
+        print(f"[PubMed] Usando cache para: {query[:60]}...")
+        return cached
+
     base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
     search_params = {
         "db": "pubmed",
         "term": query,
         "retmax": max_results,
         "retmode": "json",
-        "email": os.getenv("NCBI_EMAIL", "example@example.com"),
+        "email": NCBI_EMAIL,
     }
     try:
         resp = requests.get(base_url + "esearch.fcgi", params=search_params, timeout=15)
@@ -78,4 +86,5 @@ def fetch_pubmed(query: str, max_results: int = 100):
             "doi": doi,
             "source": "PubMed",
         })
+    set_cache(cache_key, results)
     return results
