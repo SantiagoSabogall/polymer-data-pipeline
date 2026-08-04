@@ -5,6 +5,7 @@ from polymer_pipeline.settings import (
     SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
 )
 from polymer_pipeline.cache import get_cached, set_cache
+from polymer_pipeline.query_builder import build_crossref_query
 
 
 def fetch_crossref(query):
@@ -14,6 +15,7 @@ def fetch_crossref(query):
         print(f"[Crossref] Usando cache para: {query[:60]}...")
         return cached
 
+    query = build_crossref_query(query)
     url = "https://api.crossref.org/works"
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"

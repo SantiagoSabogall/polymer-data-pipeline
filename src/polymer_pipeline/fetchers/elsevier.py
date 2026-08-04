@@ -5,6 +5,7 @@ from polymer_pipeline.settings import (
     SLEEP_BETWEEN_BATCHES, ELSEVIER_API_KEY,
 )
 from polymer_pipeline.cache import get_cached, set_cache
+from polymer_pipeline.query_builder import build_elsevier_query
 
 
 def fetch_elsevier(query):
@@ -14,6 +15,7 @@ def fetch_elsevier(query):
         print(f"[Elsevier] Usando cache para: {query[:60]}...")
         return cached
 
+    query = build_elsevier_query(query)
     if not ELSEVIER_API_KEY:
         print("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []

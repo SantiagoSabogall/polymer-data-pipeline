@@ -2,6 +2,7 @@ import time
 import requests
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.settings import OPENALEX_EMAIL, OPENALEX_API_KEY
+from polymer_pipeline.query_builder import build_openalex_query
 
 OPENALEX_API_URL = "https://api.openalex.org/works"
 MAX_RETRIES = 5
@@ -33,6 +34,8 @@ def fetch_openalex(query: str, max_results: int = 100, sleep: float = 0.2,
     if cached is not None:
         print(f"[OpenAlex] Usando cache para: {query[:60]}...")
         return cached
+
+    query = build_openalex_query(query)
 
     mailto = mailto or OPENALEX_EMAIL
     api_key = api_key or OPENALEX_API_KEY

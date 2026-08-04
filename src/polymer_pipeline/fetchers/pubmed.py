@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 
 from polymer_pipeline.settings import NCBI_EMAIL, NCBI_API_KEY
 from polymer_pipeline.cache import get_cached, set_cache
+from polymer_pipeline.query_builder import build_pubmed_query
 
 
 def fetch_pubmed(query: str, max_results: int = 100):
@@ -12,6 +13,7 @@ def fetch_pubmed(query: str, max_results: int = 100):
         print(f"[PubMed] Usando cache para: {query[:60]}...")
         return cached
 
+    query = build_pubmed_query(query)
     base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
     search_params = {
         "db": "pubmed",

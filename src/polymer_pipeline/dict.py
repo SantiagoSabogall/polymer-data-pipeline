@@ -1,18 +1,33 @@
+"""Fuente de verdad de los términos de búsqueda y de los niveles del pipeline.
+
+Las listas de términos (POLYESTER_TERMS, BARRIER_TERMS, ...) viven únicamente
+aquí y se almacenan "limpias", es decir, sin wildcards: el sufijo ``*`` se
+elimina y la responsabilidad de expresarlo (o no) según la sintaxis de cada
+API recae en ``polymer_pipeline.query_builder``.
+
+Los fragmentos booleanos genéricos (A, B, C, D, E_blends, E_additives) se
+derivan automáticamente de las listas para evitar duplicación: cualquier
+cambio en una lista se propaga a las consultas, a los filtros y al dashboard
+sin editar nada más.
+"""
+
+from __future__ import annotations
+
 POLYESTER_TERMS = [
-    "polyester*",
+    "polyester",
     "PET",
     "polyethylene terephthalate",
     "poly(ethylene terephthalate)",
-    "copolyester*",
-    "co-polyester*",
+    "copolyester",
+    "co-polyester",
 ]
 
 BARRIER_TERMS = [
-    "barrier*",
+    "barrier",
     "permeability",
     "permeation",
     "transmission",
-    "transmission rate*",
+    "transmission rate",
     "permeable",
     "WVTR",
     "OTR",
@@ -24,8 +39,8 @@ BARRIER_TERMS = [
 
 PACKAGING_TERMS = [
     "packaging",
-    "film*",
-    "package*",
+    "film",
+    "package",
     "pack",
 ]
 
@@ -33,8 +48,8 @@ BIOPOLYMER_TERMS = [
     "PBAT",
     "PLA",
     "PHB",
-    "biopolymer*",
-    "biopolyester*",
+    "biopolymer",
+    "biopolyester",
     "poly(lactic acid)",
     "polylactic acid",
     "poly(butylene adipate-co-terephthalate)",
@@ -42,33 +57,50 @@ BIOPOLYMER_TERMS = [
 ]
 
 ADDITIVE_TERMS = [
-    "additive*",
-    "filler*",
-    "nanofiller*",
-    "nanoparticle*",
-    "composite*",
-    "nanocomposite*",
-    "clay*",
-    "nanoclay*",
+    "additive",
+    "filler",
+    "nanofiller",
+    "nanoparticle",
+    "composite",
+    "nanocomposite",
+    "clay",
+    "nanoclay",
     "silica",
     "graphene",
     "cellulose",
-    "nanocrystal*",
+    "nanocrystal",
 ]
 
 BLEND_TERMS = [
-    "blend*",
-    "copolymer*",
-    "co-polyester*",
-    "copolyester*",
+    "blend",
+    "copolymer",
+    "co-polyester",
+    "copolyester",
 ]
 
-A = '(polyester OR polyesters OR PET OR "polyethylene terephthalate")'
-B = '("high barrier" OR "oxygen barrier" OR "gas barrier" OR "water vapor barrier" OR WVTR OR OTR)'
-C = '(packaging OR films OR "food packaging" OR "flexible packaging")'
-D = '(PBAT OR PLA OR PHB OR biopolymer* OR biopolyester*)'
-E_blends = '(blend* OR copolymer* OR co-polyester* OR "polymer blend*")'
-E_additives = '(additive* OR filler* OR nanoparticle* OR composite* OR nanocomposite* OR clay*)'
+
+def _term_for_query(term: str) -> str:
+    """Expresa un término limpio dentro de un fragmento booleano genérico.
+
+    Las frases (más de una palabra) se entrecomillan para que el parser de
+    ``query_builder`` las distinga de los términos simples.
+    """
+    return f'"{term}"' if " " in term else term
+
+
+def _or_group(terms: list[str]) -> str:
+    """Construye un grupo ``OR`` a partir de una lista de términos limpios."""
+    return "(" + " OR ".join(_term_for_query(term) for term in terms) + ")"
+
+
+# Fragmentos booleanos genéricos derivados de las listas (única fuente).
+# Sirven de entrada a query_builder.py, que los traduce a la sintaxis de cada API.
+A = _or_group(POLYESTER_TERMS)
+B = _or_group(BARRIER_TERMS)
+C = _or_group(PACKAGING_TERMS)
+D = _or_group(BIOPOLYMER_TERMS)
+E_blends = _or_group(BLEND_TERMS)
+E_additives = _or_group(ADDITIVE_TERMS)
 
 # Única fuente de verdad de los niveles de búsqueda.
 # Agregar o quitar un nivel aquí (key, label, color, queries y filter_rules opcionales)
