@@ -151,7 +151,7 @@ def plot_source_distribution(df: pd.DataFrame, pdf_dir: str = ".") -> str:
         "Springer": PALETTE["coral"],
         "Elsevier": PALETTE["blue"],
         "PubMed":   PALETTE["teal"],
-        "ChemRxiv": PALETTE["amber"],
+        "OpenAlex": PALETTE["amber"],
     }
     colors = [colors_map.get(s, PALETTE["amber"]) for s in counts.index]
 

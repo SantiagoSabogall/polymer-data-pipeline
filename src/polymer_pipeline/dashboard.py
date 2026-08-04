@@ -79,8 +79,8 @@ def generate_dashboard(results, plots=None):
     level_buttons_html = _level_buttons_html(LEVELS)
     level_keys_json = json.dumps([level["key"].lower() for level in LEVELS])
 
-    pubmed_count   = sum(1 for r in results if r["source"] == "PubMed")
-    chemrxiv_count = sum(1 for r in results if r["source"] == "ChemRxiv")
+    pubmed_count = sum(1 for r in results if r["source"] == "PubMed")
+    openalex_count = sum(1 for r in results if r["source"] == "OpenAlex")
 
     results_json = json.dumps(results, ensure_ascii=False)
 
@@ -130,7 +130,7 @@ def generate_dashboard(results, plots=None):
             --source-springer: #f43f5e;
             --source-elsevier: #0ea5e9;
             --source-pubmed: #22c55e;
-            --source-chemrxiv: #fb923c;
+            --source-openalex: #fb923c;
         }}
 
         * {{
@@ -398,7 +398,7 @@ def generate_dashboard(results, plots=None):
         .badge.src-springer  {{ background: rgba(244, 63, 94, 0.15);  color: var(--source-springer);  border: 1px solid rgba(244, 63, 94, 0.3);  }}
         .badge.src-elsevier  {{ background: rgba(14, 165, 233, 0.15); color: var(--source-elsevier);  border: 1px solid rgba(14, 165, 233, 0.3); }}
         .badge.src-pubmed    {{ background: rgba(34, 197, 94, 0.15);  color: var(--source-pubmed);    border: 1px solid rgba(34, 197, 94, 0.3);  }}
-        .badge.src-chemrxiv  {{ background: rgba(251, 146, 60, 0.15); color: var(--source-chemrxiv);  border: 1px solid rgba(251, 146, 60, 0.3); }}
+        .badge.src-openalex  {{ background: rgba(251, 146, 60, 0.15); color: var(--source-openalex);  border: 1px solid rgba(251, 146, 60, 0.3); }}
 
         .empty-state {{
             padding: 4rem 2rem;
@@ -491,9 +491,9 @@ def generate_dashboard(results, plots=None):
             <div class="label">PubMed</div>
             <div class="value" style="color:var(--source-pubmed)">{pubmed_count}</div>
         </div>
-        <div class="stat-card" style="--accent-primary:var(--source-chemrxiv)">
-            <div class="label">ChemRxiv</div>
-            <div class="value" style="color:var(--source-chemrxiv)">{chemrxiv_count}</div>
+        <div class="stat-card" style="--accent-primary:var(--source-openalex)">
+            <div class="label">OpenAlex</div>
+            <div class="value" style="color:var(--source-openalex)">{openalex_count}</div>
         </div>
     </div>
 
@@ -515,7 +515,7 @@ def generate_dashboard(results, plots=None):
                 <button class="filter-btn" onclick="filterSource('Springer', this)">Springer</button>
                 <button class="filter-btn" onclick="filterSource('Elsevier', this)">Elsevier</button>
                 <button class="filter-btn" onclick="filterSource('PubMed', this)">PubMed</button>
-                <button class="filter-btn" onclick="filterSource('ChemRxiv', this)">ChemRxiv</button>
+                <button class="filter-btn" onclick="filterSource('OpenAlex', this)">OpenAlex</button>
             </div>
         </div>
     </div>

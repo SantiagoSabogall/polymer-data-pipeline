@@ -13,7 +13,7 @@ from polymer_pipeline.fetchers import (
     fetch_springer,
     fetch_elsevier,
     fetch_pubmed,
-    fetch_chemrxiv,
+    fetch_openalex,
 )
 
 
@@ -37,7 +37,7 @@ def main():
                 (fetch_springer, (q,), {}),
                 (fetch_elsevier, (q,), {}),
                 (fetch_pubmed, (q,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
-                (fetch_chemrxiv, (q,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
+                (fetch_openalex, (q,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
             ]
 
             combined_raw = []

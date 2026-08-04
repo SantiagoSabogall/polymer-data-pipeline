@@ -30,13 +30,14 @@ def _term_to_pattern(term):
     trailing = r"\b" if not is_wildcard and base[-1:].isalnum() else ""
     return leading + pattern + trailing
 
-
+_CASE_SENSITIVE_TERMS = {"PET"}
 def contains_any_term(text, terms):
     if not text:
         return False
     for term in terms:
         pattern = _term_to_pattern(term)
-        if re.search(pattern, text, flags=re.IGNORECASE):
+        flags = 0 if term in _CASE_SENSITIVE_TERMS else re.IGNORECASE
+        if re.search(pattern, text, flags=flags):
             return True
     return False
 
