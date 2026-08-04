@@ -1,14 +1,83 @@
 import json
+import re
+from collections import Counter
+
+from polymer_pipeline.dict import LEVELS
+
+_LEVEL_NUM_RE = re.compile(r"^L(\d+)$")
+
+
+def _hex_to_rgba(hex_color, alpha):
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _level_display_name(level):
+    match = _LEVEL_NUM_RE.match(level["key"])
+    base = f"Level {match.group(1)}" if match else level["key"]
+    return f"{base} ({level['label']})"
+
+
+def _level_css(levels):
+    var_lines = []
+    stat_rules = []
+    badge_rules = []
+    for level in levels:
+        cls = f"lvl-{level['key'].lower()}"
+        color = level["color"]
+        var_lines.append(f"--badge-{cls}: {color};")
+        stat_rules.append(f".stat-card.{cls}::before {{ background: {color}; }}")
+        badge_rules.append(
+            f".badge.{cls} {{ background: {_hex_to_rgba(color, 0.15)}; "
+            f"color: var(--badge-{cls}); border: 1px solid {_hex_to_rgba(color, 0.3)}; }}"
+        )
+    return (
+        "\n            ".join(var_lines),
+        "\n        ".join(stat_rules),
+        "\n        ".join(badge_rules),
+    )
+
+
+def _stat_cards_html(level_counts, total_articles, levels):
+    cards = [
+        '<div class="stat-card">',
+        '    <div class="label">Total Artículos</div>',
+        f'    <div class="value" id="stat-total">{total_articles}</div>',
+        "</div>",
+    ]
+    for level in levels:
+        key = level["key"]
+        cards.append(f'<div class="stat-card lvl-{key.lower()}">')
+        cards.append(f'    <div class="label">{_level_display_name(level)}</div>')
+        cards.append(f'    <div class="value" id="stat-{key.lower()}">{level_counts.get(key, 0)}</div>')
+        cards.append("</div>")
+    return "\n        ".join(cards)
+
+
+def _level_buttons_html(levels):
+    buttons = [
+        '<button class="filter-btn active" id="btn-all-lvl" '
+        'onclick="filterLevel(\'ALL\', this)">Todos los Niveles</button>'
+    ]
+    for level in levels:
+        buttons.append(
+            f"<button class=\"filter-btn\" "
+            f"onclick=\"filterLevel('{level['key']}', this)\">"
+            f"{_level_display_name(level)}</button>"
+        )
+    return "\n                ".join(buttons)
 
 
 def generate_dashboard(results, plots=None):
     if plots is None:
         plots = {}
     total_articles = len(results)
-    l1_count = sum(1 for r in results if r["level"] == "L1")
-    l2_count = sum(1 for r in results if r["level"] == "L2")
-    l3_count = sum(1 for r in results if r["level"] == "L3")
-    l4_count = sum(1 for r in results if r["level"] == "L4")
+    level_counts = Counter(r.get("level") for r in results)
+    level_css_vars, level_stat_rules, level_badge_rules = _level_css(LEVELS)
+    stats_cards_html = _stat_cards_html(level_counts, total_articles, LEVELS)
+    level_buttons_html = _level_buttons_html(LEVELS)
+    level_keys_json = json.dumps([level["key"].lower() for level in LEVELS])
 
     pubmed_count   = sum(1 for r in results if r["source"] == "PubMed")
     chemrxiv_count = sum(1 for r in results if r["source"] == "ChemRxiv")
@@ -55,10 +124,7 @@ def generate_dashboard(results, plots=None):
             --accent-primary: #38bdf8;
             --accent-glow: rgba(56, 189, 248, 0.15);
 
-            --badge-l1: #10b981;
-            --badge-l2: #f59e0b;
-            --badge-l3: #3b82f6;
-            --badge-l4: #ec4899;
+            {level_css_vars}
 
             --source-crossref: #8b5cf6;
             --source-springer: #f43f5e;
@@ -143,10 +209,7 @@ def generate_dashboard(results, plots=None):
             opacity: 0.7;
         }}
 
-        .stat-card.l1::before {{ background: var(--badge-l1); }}
-        .stat-card.l2::before {{ background: var(--badge-l2); }}
-        .stat-card.l3::before {{ background: var(--badge-l3); }}
-        .stat-card.l4::before {{ background: var(--badge-l4); }}
+        {level_stat_rules}
 
         .stat-card:hover {{
             transform: translateY(-4px);
@@ -324,12 +387,12 @@ def generate_dashboard(results, plots=None):
             text-transform: uppercase;
             letter-spacing: 0.5px;
             text-align: center;
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-muted);
+            border: 1px solid rgba(148, 163, 184, 0.3);
         }}
 
-        .badge.l1 {{ background: rgba(16, 185, 129, 0.15); color: var(--badge-l1); border: 1px solid rgba(16, 185, 129, 0.3); }}
-        .badge.l2 {{ background: rgba(245, 158, 11, 0.15); color: var(--badge-l2); border: 1px solid rgba(245, 158, 11, 0.3); }}
-        .badge.l3 {{ background: rgba(59, 130, 246, 0.15); color: var(--badge-l3); border: 1px solid rgba(59, 130, 246, 0.3); }}
-        .badge.l4 {{ background: rgba(236, 72, 153, 0.15); color: var(--badge-l4); border: 1px solid rgba(236, 72, 153, 0.3); }}
+        {level_badge_rules}
 
         .badge.src-crossref  {{ background: rgba(139, 92, 246, 0.15); color: var(--source-crossref);  border: 1px solid rgba(139, 92, 246, 0.3); }}
         .badge.src-springer  {{ background: rgba(244, 63, 94, 0.15);  color: var(--source-springer);  border: 1px solid rgba(244, 63, 94, 0.3);  }}
@@ -423,26 +486,7 @@ def generate_dashboard(results, plots=None):
     </header>
 
     <div class="stats-grid">
-        <div class="stat-card">
-            <div class="label">Total Artículos</div>
-            <div class="value" id="stat-total">{total_articles}</div>
-        </div>
-        <div class="stat-card l1">
-            <div class="label">Level 1 (Blends)</div>
-            <div class="value" id="stat-l1">{l1_count}</div>
-        </div>
-        <div class="stat-card l2">
-            <div class="label">Level 2 (Aditivos)</div>
-            <div class="value" id="stat-l2">{l2_count}</div>
-        </div>
-        <div class="stat-card l3">
-            <div class="label">Level 3 (Empaques)</div>
-            <div class="value" id="stat-l3">{l3_count}</div>
-        </div>
-        <div class="stat-card l4">
-            <div class="label">Level 4 (Biodegradables)</div>
-            <div class="value" id="stat-l4">{l4_count}</div>
-        </div>
+        {stats_cards_html}
         <div class="stat-card" style="--accent-primary:var(--source-pubmed)">
             <div class="label">PubMed</div>
             <div class="value" style="color:var(--source-pubmed)">{pubmed_count}</div>
@@ -462,11 +506,7 @@ def generate_dashboard(results, plots=None):
             </div>
 
             <div class="filter-group">
-                <button class="filter-btn active" id="btn-all-lvl" onclick="filterLevel('ALL', this)">Todos los Niveles</button>
-                <button class="filter-btn" onclick="filterLevel('L1', this)">Level 1</button>
-                <button class="filter-btn" onclick="filterLevel('L2', this)">Level 2</button>
-                <button class="filter-btn" onclick="filterLevel('L3', this)">Level 3</button>
-                <button class="filter-btn" onclick="filterLevel('L4', this)">Level 4</button>
+                {level_buttons_html}
             </div>
 
             <div class="filter-group">
@@ -508,6 +548,8 @@ def generate_dashboard(results, plots=None):
 <script>
     const dataset = {results_json};
 
+    const levelKeys = {level_keys_json};
+
     let activeLevel = 'ALL';
     let activeSource = 'ALL';
 
@@ -530,7 +572,7 @@ def generate_dashboard(results, plots=None):
         data.forEach(item => {{
             const tr = document.createElement("tr");
 
-            const levelClass = item.level.toLowerCase();
+            const levelClass = "lvl-" + item.level.toLowerCase();
             const levelBadge = `<span class="badge ${{levelClass}}">${{item.level}}</span>`;
 
             const sourceClass = `src-${{item.source.toLowerCase()}}`;
@@ -588,10 +630,10 @@ def generate_dashboard(results, plots=None):
         }});
 
         document.getElementById("stat-total").innerText = filtered.length;
-        document.getElementById("stat-l1").innerText = filtered.filter(i => i.level === 'L1').length;
-        document.getElementById("stat-l2").innerText = filtered.filter(i => i.level === 'L2').length;
-        document.getElementById("stat-l3").innerText = filtered.filter(i => i.level === 'L3').length;
-        document.getElementById("stat-l4").innerText = filtered.filter(i => i.level === 'L4').length;
+        levelKeys.forEach(lk => {{
+            const el = document.getElementById("stat-" + lk);
+            if (el) el.innerText = filtered.filter(i => (i.level || "").toLowerCase() === lk).length;
+        }});
 
         renderTable(filtered);
     }}

@@ -1,7 +1,7 @@
 import requests
 import xml.etree.ElementTree as ET
 
-from polymer_pipeline.settings import NCBI_EMAIL
+from polymer_pipeline.settings import NCBI_EMAIL, NCBI_API_KEY
 from polymer_pipeline.cache import get_cached, set_cache
 
 
@@ -20,6 +20,8 @@ def fetch_pubmed(query: str, max_results: int = 100):
         "retmode": "json",
         "email": NCBI_EMAIL,
     }
+    if NCBI_API_KEY:
+        search_params["api_key"] = NCBI_API_KEY
     try:
         resp = requests.get(base_url + "esearch.fcgi", params=search_params, timeout=15)
         resp.raise_for_status()
@@ -38,6 +40,8 @@ def fetch_pubmed(query: str, max_results: int = 100):
         "rettype": "xml",
         "retmode": "xml",
     }
+    if NCBI_API_KEY:
+        fetch_params["api_key"] = NCBI_API_KEY
     try:
         resp = requests.get(base_url + "efetch.fcgi", params=fetch_params, timeout=15)
         resp.raise_for_status()

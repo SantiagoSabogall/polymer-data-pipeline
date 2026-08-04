@@ -1,7 +1,8 @@
 import json
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY
+from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY, MAX_WORKERS
 from polymer_pipeline.dict import SEARCH_QUERIES
 from polymer_pipeline.filters import passes_filter
 from polymer_pipeline.plots import generate_all_plots
@@ -31,14 +32,25 @@ def main():
         for q in queries:
             print(f"  Consulta: {q[:80]}...")
 
-            crossref_articles = fetch_crossref(q)
-            springer_articles = fetch_springer(q)
-            elsevier_articles = fetch_elsevier(q)
-            pubmed_articles = fetch_pubmed(q, max_results=TOTAL_RESULTS_PER_QUERY)
-            chemrxiv_articles = fetch_chemrxiv(q, max_results=TOTAL_RESULTS_PER_QUERY)
+            fetcher_tasks = [
+                (fetch_crossref, (q,), {}),
+                (fetch_springer, (q,), {}),
+                (fetch_elsevier, (q,), {}),
+                (fetch_pubmed, (q,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
+                (fetch_chemrxiv, (q,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
+            ]
 
-            combined_raw = (crossref_articles + springer_articles + elsevier_articles
-                            + pubmed_articles + chemrxiv_articles)
+            combined_raw = []
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {
+                    executor.submit(fn, *args, **kwargs): fn.__name__
+                    for fn, args, kwargs in fetcher_tasks
+                }
+                for future in as_completed(futures):
+                    try:
+                        combined_raw.extend(future.result())
+                    except Exception as e:
+                        print(f"  [Error] {futures[future]} falló: {e}")
 
             combined = [art for art in combined_raw if passes_filter(art, level)]
             rejected_items = [art for art in combined_raw if not passes_filter(art, level)]

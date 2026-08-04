@@ -70,21 +70,44 @@ D = '(PBAT OR PLA OR PHB OR biopolymer* OR biopolyester*)'
 E_blends = '(blend* OR copolymer* OR co-polyester* OR "polymer blend*")'
 E_additives = '(additive* OR filler* OR nanoparticle* OR composite* OR nanocomposite* OR clay*)'
 
-L1_QUERIES = [f"{A} AND {E_blends} AND {B}"]
-L2_QUERIES = [f"{A} AND {E_additives} AND {B}"]
-L3_QUERIES = [f"{C} AND {B} AND {A}"]
-L4_QUERIES = [f"{D} AND {B} AND {C}"]
+# Única fuente de verdad de los niveles de búsqueda.
+# Agregar o quitar un nivel aquí (key, label, color, queries y filter_rules opcionales)
+# propaga los cambios a pipeline, filtros, dashboard y exports automáticamente.
+LEVELS = [
+    {
+        "key": "L1",
+        "label": "Blends",
+        "color": "#10b981",
+        "queries": [f"{A} AND {E_blends} AND {B}"],
+        "filter_rules": [POLYESTER_TERMS, BLEND_TERMS, BARRIER_TERMS],
+    },
+    {
+        "key": "L2",
+        "label": "Aditivos",
+        "color": "#f59e0b",
+        "queries": [f"{A} AND {E_additives} AND {B}"],
+        "filter_rules": [POLYESTER_TERMS, ADDITIVE_TERMS, BARRIER_TERMS],
+    },
+    {
+        "key": "L3",
+        "label": "Empaques",
+        "color": "#3b82f6",
+        "queries": [f"{C} AND {B} AND {A}"],
+        "filter_rules": [PACKAGING_TERMS, BARRIER_TERMS, POLYESTER_TERMS],
+    },
+    {
+        "key": "L4",
+        "label": "Biodegradables",
+        "color": "#ec4899",
+        "queries": [f"{D} AND {B} AND {C}"],
+        "filter_rules": [BIOPOLYMER_TERMS, BARRIER_TERMS, PACKAGING_TERMS],
+    },
+]
 
+# Derivados (se mantienen por compatibilidad; no editarlos a mano)
+SEARCH_QUERIES = {level["key"]: level["queries"] for level in LEVELS}
 LEVEL_FILTER_RULES = {
-    "L1": [POLYESTER_TERMS, BLEND_TERMS, BARRIER_TERMS],
-    "L2": [POLYESTER_TERMS, ADDITIVE_TERMS, BARRIER_TERMS],
-    "L3": [PACKAGING_TERMS, BARRIER_TERMS, POLYESTER_TERMS],
-    "L4": [BIOPOLYMER_TERMS, BARRIER_TERMS, PACKAGING_TERMS],
-}
-
-SEARCH_QUERIES = {
-    "L1": L1_QUERIES,
-    "L2": L2_QUERIES,
-    "L3": L3_QUERIES,
-    "L4": L4_QUERIES,
+    level["key"]: level["filter_rules"]
+    for level in LEVELS
+    if level.get("filter_rules")
 }

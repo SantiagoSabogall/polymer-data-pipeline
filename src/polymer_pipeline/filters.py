@@ -9,6 +9,13 @@ from polymer_pipeline.dict import (
     ADDITIVE_TERMS,
 )
 
+_FALLBACK_MATERIAL = POLYESTER_TERMS + BIOPOLYMER_TERMS + PACKAGING_TERMS
+_FALLBACK_PROPERTY = BARRIER_TERMS + BLEND_TERMS + ADDITIVE_TERMS
+
+# Estas fuentes ya filtran por relevancia dentro de su propia API,
+# por lo que no se les aplican las reglas de nivel.
+SOURCES_WITH_BUILTIN_FILTER = {"Springer", "Elsevier"}
+
 
 def _term_to_pattern(term):
     is_wildcard = term.endswith("*")
@@ -39,14 +46,16 @@ def passes_filter(article, level):
     if not title or title == "Sin título":
         return False
 
+    # Springer y Elsevier ya filtran por relevancia en su propia API
     source = article.get("source", "")
-    if source in ["Springer", "Elsevier"]:
+    if source in SOURCES_WITH_BUILTIN_FILTER:
         return True
 
-    material_terms = POLYESTER_TERMS + BIOPOLYMER_TERMS + PACKAGING_TERMS
-    property_terms = BARRIER_TERMS + BLEND_TERMS + ADDITIVE_TERMS
+    rules = LEVEL_FILTER_RULES.get(level)
+    if rules:
+        # Todos los grupos de términos del nivel deben tener al menos una coincidencia
+        return all(contains_any_term(title, term_group) for term_group in rules)
 
-    has_material = contains_any_term(title, material_terms)
-    has_property = contains_any_term(title, property_terms)
+    # Fallback genérico para niveles sin reglas definidas
+    return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)
 
-    return has_material and has_property
