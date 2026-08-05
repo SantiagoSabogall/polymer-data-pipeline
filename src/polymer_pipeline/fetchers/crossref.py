@@ -1,11 +1,12 @@
-import time
-import requests
 from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
 )
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_crossref_query
+from polymer_pipeline.http import PageFetcher, make_session
+
+URL = "https://api.crossref.org/works"
 
 
 def fetch_crossref(query):
@@ -15,81 +16,66 @@ def fetch_crossref(query):
         print(f"[Crossref] Usando cache para: {query[:60]}...")
         return cached
 
-    query = build_crossref_query(query)
-    url = "https://api.crossref.org/works"
+    translated = build_crossref_query(query)
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
     }
 
-    normalized = []
-    offset = 0
-
-    while offset < TOTAL_RESULTS_PER_QUERY:
-        params = {
-            "query": query,
+    def build_params(start):
+        return {
+            "query": translated,
             "rows": BATCH_SIZE,
-            "offset": offset,
+            "offset": start,
         }
 
-        try:
-            response = requests.get(url, headers=headers, params=params, timeout=15)
+    def extract_items(data):
+        items = data.get("message", {}).get("items", [])
+        normalized = []
+        for item in items:
+            title = item.get("title", [""])[0] if item.get("title") else "Sin título"
+            doi = item.get("DOI", "").lower().strip()
+            journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
 
-            if response.status_code == 429:
-                print(f"[Crossref] 429 en offset={offset}. Pausando 5s y saltando este lote.")
-                time.sleep(5)
-                offset += BATCH_SIZE
-                continue
+            authors = item.get("author", [])
+            author = "Desconocido"
+            if authors:
+                given = authors[0].get("given", "")
+                family = authors[0].get("family", "")
+                author = f"{given} {family}".strip() or "Desconocido"
 
-            if response.status_code != 200:
-                print(f"[Crossref] Error {response.status_code} en offset={offset}. Se omite este lote.")
-                offset += BATCH_SIZE
-                continue
+            year = ""
+            if "published-print" in item:
+                year = str(item["published-print"]["date-parts"][0][0])
+            elif "published-online" in item:
+                year = str(item["published-online"]["date-parts"][0][0])
 
-            data = response.json()
-            message = data.get("message", {})
-            items = message.get("items", [])
+            normalized.append({
+                "title": title,
+                "author": author,
+                "journal": journal,
+                "year": year,
+                "doi": doi,
+                "source": "Crossref",
+            })
+        return normalized
 
-            if not items:
-                break
+    def extract_total(data):
+        return data.get("message", {}).get("total-results", 0)
 
-            for item in items:
-                title = item.get("title", [""])[0] if item.get("title") else "Sin título"
-                doi = item.get("DOI", "").lower().strip()
-                journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
+    fetcher = PageFetcher(
+        url=URL,
+        batch_size=BATCH_SIZE,
+        sleep_between=SLEEP_BETWEEN_BATCHES,
+        total_limit=TOTAL_RESULTS_PER_QUERY,
+        build_params=build_params,
+        extract_items=extract_items,
+        extract_total=extract_total,
+        name="Crossref",
+    )
 
-                authors = item.get("author", [])
-                author = "Desconocido"
-                if authors:
-                    given = authors[0].get("given", "")
-                    family = authors[0].get("family", "")
-                    author = f"{given} {family}".strip() or "Desconocido"
-
-                year = ""
-                if "published-print" in item:
-                    year = str(item["published-print"]["date-parts"][0][0])
-                elif "published-online" in item:
-                    year = str(item["published-online"]["date-parts"][0][0])
-
-                normalized.append({
-                    "title": title,
-                    "author": author,
-                    "journal": journal,
-                    "year": year,
-                    "doi": doi,
-                    "source": "Crossref",
-                })
-
-            total_results = message.get("total-results", 0)
-            if len(normalized) >= total_results:
-                break
-
-            offset += BATCH_SIZE
-            time.sleep(SLEEP_BETWEEN_BATCHES)
-
-        except Exception as e:
-            print(f"[Crossref] Falló la petición en offset={offset}: {e}")
-            offset += BATCH_SIZE
-            continue
+    with make_session() as session:
+        session.headers.update(headers)
+        normalized = fetcher.run(session)
 
     set_cache(cache_key, normalized)
     return normalized

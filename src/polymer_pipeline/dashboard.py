@@ -3,6 +3,7 @@ import re
 from collections import Counter
 
 from polymer_pipeline.dict import LEVELS
+from polymer_pipeline.sources import SOURCES
 
 _LEVEL_NUM_RE = re.compile(r"^L(\d+)$")
 
@@ -69,18 +70,56 @@ def _level_buttons_html(levels):
     return "\n                ".join(buttons)
 
 
+def _source_css():
+    var_lines = []
+    badge_rules = []
+    for name, cfg in SOURCES.items():
+        cls = name.lower()
+        color = cfg["color"]
+        var_lines.append(f"--source-{cls}: {color};")
+        badge_rules.append(
+            f".badge.src-{cls} {{ background: {_hex_to_rgba(color, 0.15)}; "
+            f"color: var(--source-{cls}); border: 1px solid {_hex_to_rgba(color, 0.3)}; }}"
+        )
+    return "\n            ".join(var_lines), "\n        ".join(badge_rules)
+
+
+def _source_buttons_html():
+    buttons = [
+        '<button class="filter-btn active" id="btn-all-src" '
+        'onclick="filterSource(\'ALL\', this)">Todas las APIs</button>'
+    ]
+    for name in SOURCES:
+        buttons.append(
+            f'<button class="filter-btn" onclick="filterSource(\'{name}\', this)">{name}</button>'
+        )
+    return "\n                ".join(buttons)
+
+
+def _source_stat_cards_html(results):
+    counts = Counter(r.get("source") for r in results)
+    cards = []
+    for name in SOURCES:
+        cls = name.lower()
+        cards.append(f'<div class="stat-card" style="--accent-primary:var(--source-{cls})">')
+        cards.append(f'    <div class="label">{name}</div>')
+        cards.append(f'    <div class="value" style="color:var(--source-{cls})">{counts.get(name, 0)}</div>')
+        cards.append("</div>")
+    return "\n        ".join(cards)
+
+
 def generate_dashboard(results, plots=None):
     if plots is None:
         plots = {}
     total_articles = len(results)
     level_counts = Counter(r.get("level") for r in results)
     level_css_vars, level_stat_rules, level_badge_rules = _level_css(LEVELS)
+    source_css_vars, source_badge_rules = _source_css()
     stats_cards_html = _stat_cards_html(level_counts, total_articles, LEVELS)
+    source_stat_cards_html = _source_stat_cards_html(results)
     level_buttons_html = _level_buttons_html(LEVELS)
+    source_buttons_html = _source_buttons_html()
     level_keys_json = json.dumps([level["key"].lower() for level in LEVELS])
-
-    pubmed_count = sum(1 for r in results if r["source"] == "PubMed")
-    openalex_count = sum(1 for r in results if r["source"] == "OpenAlex")
 
     results_json = json.dumps(results, ensure_ascii=False)
 
@@ -126,11 +165,7 @@ def generate_dashboard(results, plots=None):
 
             {level_css_vars}
 
-            --source-crossref: #8b5cf6;
-            --source-springer: #f43f5e;
-            --source-elsevier: #0ea5e9;
-            --source-pubmed: #22c55e;
-            --source-openalex: #fb923c;
+            {source_css_vars}
         }}
 
         * {{
@@ -394,11 +429,7 @@ def generate_dashboard(results, plots=None):
 
         {level_badge_rules}
 
-        .badge.src-crossref  {{ background: rgba(139, 92, 246, 0.15); color: var(--source-crossref);  border: 1px solid rgba(139, 92, 246, 0.3); }}
-        .badge.src-springer  {{ background: rgba(244, 63, 94, 0.15);  color: var(--source-springer);  border: 1px solid rgba(244, 63, 94, 0.3);  }}
-        .badge.src-elsevier  {{ background: rgba(14, 165, 233, 0.15); color: var(--source-elsevier);  border: 1px solid rgba(14, 165, 233, 0.3); }}
-        .badge.src-pubmed    {{ background: rgba(34, 197, 94, 0.15);  color: var(--source-pubmed);    border: 1px solid rgba(34, 197, 94, 0.3);  }}
-        .badge.src-openalex  {{ background: rgba(251, 146, 60, 0.15); color: var(--source-openalex);  border: 1px solid rgba(251, 146, 60, 0.3); }}
+        {source_badge_rules}
 
         .empty-state {{
             padding: 4rem 2rem;
@@ -487,14 +518,7 @@ def generate_dashboard(results, plots=None):
 
     <div class="stats-grid">
         {stats_cards_html}
-        <div class="stat-card" style="--accent-primary:var(--source-pubmed)">
-            <div class="label">PubMed</div>
-            <div class="value" style="color:var(--source-pubmed)">{pubmed_count}</div>
-        </div>
-        <div class="stat-card" style="--accent-primary:var(--source-openalex)">
-            <div class="label">OpenAlex</div>
-            <div class="value" style="color:var(--source-openalex)">{openalex_count}</div>
-        </div>
+        {source_stat_cards_html}
     </div>
 
     {charts_section_html}
@@ -510,12 +534,7 @@ def generate_dashboard(results, plots=None):
             </div>
 
             <div class="filter-group">
-                <button class="filter-btn active" id="btn-all-src" onclick="filterSource('ALL', this)">Todas las APIs</button>
-                <button class="filter-btn" onclick="filterSource('Crossref', this)">Crossref</button>
-                <button class="filter-btn" onclick="filterSource('Springer', this)">Springer</button>
-                <button class="filter-btn" onclick="filterSource('Elsevier', this)">Elsevier</button>
-                <button class="filter-btn" onclick="filterSource('PubMed', this)">PubMed</button>
-                <button class="filter-btn" onclick="filterSource('OpenAlex', this)">OpenAlex</button>
+                {source_buttons_html}
             </div>
         </div>
     </div>

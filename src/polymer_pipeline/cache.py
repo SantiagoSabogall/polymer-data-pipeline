@@ -3,8 +3,9 @@ import hashlib
 import time
 from pathlib import Path
 
+from polymer_pipeline.settings import CACHE_TTL
+
 CACHE_DIR = Path(".cache")
-CACHE_TTL = 3600
 
 
 def _key_to_path(key: str) -> Path:

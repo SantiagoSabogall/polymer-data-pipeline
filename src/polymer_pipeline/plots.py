@@ -102,6 +102,8 @@ def plot_top_journals(df: pd.DataFrame, pdf_dir: str = ".", top_n: int = 10) -> 
     return b64
 
 
+from polymer_pipeline.sources import SOURCE_COLORS
+
 STOP_WORDS = {
     "and", "of", "the", "for", "a", "toward", "with", "from",
     "on", "in", "to", "as", "by", "an", "its", "via", "based",
@@ -146,14 +148,7 @@ def plot_top_keywords(data: list, pdf_dir: str = ".", top_n: int = 10) -> str:
 
 def plot_source_distribution(df: pd.DataFrame, pdf_dir: str = ".") -> str:
     counts = df["source"].value_counts()
-    colors_map = {
-        "Crossref": PALETTE["purple"],
-        "Springer": PALETTE["coral"],
-        "Elsevier": PALETTE["blue"],
-        "PubMed":   PALETTE["teal"],
-        "OpenAlex": PALETTE["amber"],
-    }
-    colors = [colors_map.get(s, PALETTE["amber"]) for s in counts.index]
+    colors = [SOURCE_COLORS.get(s, PALETTE["amber"]) for s in counts.index]
 
     fig, ax = plt.subplots(figsize=(6, 5))
     wedges, texts, autotexts = ax.pie(

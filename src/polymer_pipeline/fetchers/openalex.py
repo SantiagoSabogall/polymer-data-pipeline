@@ -1,8 +1,8 @@
 import time
-import requests
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.settings import OPENALEX_EMAIL, OPENALEX_API_KEY
 from polymer_pipeline.query_builder import build_openalex_query
+from polymer_pipeline.http import make_session
 
 OPENALEX_API_URL = "https://api.openalex.org/works"
 MAX_RETRIES = 5
@@ -47,7 +47,7 @@ def fetch_openalex(query: str, max_results: int = 100, sleep: float = 0.2,
     cursor = "*"  # OpenAlex exige paginación por cursor para recorridos completos;
                   # offset+page se rompe (error 403) pasado el resultado #10,000.
 
-    with requests.Session() as session:
+    with make_session(backoff_factor=2.0) as session:
         session.headers.update({"User-Agent": "polymer-pipeline/1.0 (mailto:%s)" % (mailto or "unknown")})
 
         while len(normalized) < max_results:

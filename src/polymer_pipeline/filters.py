@@ -8,16 +8,15 @@ from polymer_pipeline.dict import (
     BLEND_TERMS,
     ADDITIVE_TERMS,
 )
+from polymer_pipeline.sources import SOURCES_WITH_BUILTIN_FILTER
 
 _FALLBACK_MATERIAL = POLYESTER_TERMS + BIOPOLYMER_TERMS + PACKAGING_TERMS
 _FALLBACK_PROPERTY = BARRIER_TERMS + BLEND_TERMS + ADDITIVE_TERMS
 
-# Estas fuentes ya filtran por relevancia dentro de su propia API,
-# por lo que no se les aplican las reglas de nivel.
-SOURCES_WITH_BUILTIN_FILTER = {"Springer", "Elsevier"}
+_CASE_SENSITIVE_TERMS = {"PET"}
 
 
-def _term_to_pattern(term):
+def _compile_term(term: str) -> re.Pattern:
     is_wildcard = term.endswith("*")
     if is_wildcard:
         base = term[:-1]
@@ -28,16 +27,32 @@ def _term_to_pattern(term):
 
     leading = r"\b" if base[:1].isalnum() else ""
     trailing = r"\b" if not is_wildcard and base[-1:].isalnum() else ""
-    return leading + pattern + trailing
+    flags = 0 if term in _CASE_SENSITIVE_TERMS else re.IGNORECASE
+    return re.compile(leading + pattern + trailing, flags=flags)
 
-_CASE_SENSITIVE_TERMS = {"PET"}
+
+# Patrones precompilados una sola vez (los términos no cambian en runtime).
+_TERM_PATTERNS = {term: _compile_term(term) for term in {
+    *_FALLBACK_MATERIAL,
+    *_FALLBACK_PROPERTY,
+    *POLYESTER_TERMS,
+    *BIOPOLYMER_TERMS,
+    *PACKAGING_TERMS,
+    *BARRIER_TERMS,
+    *BLEND_TERMS,
+    *ADDITIVE_TERMS,
+}}
+
+
+def _term_pattern(term: str) -> re.Pattern:
+    return _TERM_PATTERNS.get(term) or _compile_term(term)
+
+
 def contains_any_term(text, terms):
     if not text:
         return False
     for term in terms:
-        pattern = _term_to_pattern(term)
-        flags = 0 if term in _CASE_SENSITIVE_TERMS else re.IGNORECASE
-        if re.search(pattern, text, flags=flags):
+        if _term_pattern(term).search(text):
             return True
     return False
 
@@ -59,4 +74,3 @@ def passes_filter(article, level):
 
     # Fallback genérico para niveles sin reglas definidas
     return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)
-
