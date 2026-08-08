@@ -529,6 +529,10 @@ def generate_dashboard(results, plots=None):
                 <input type="text" id="search-input" placeholder="Buscar por título, autor, revista, DOI..." oninput="filterData()">
             </div>
 
+            <div class="search-box" style="max-width: 400px;">
+                <input type="text" id="title-search-input" placeholder="Buscar palabra en títulos..." oninput="filterData()">
+            </div>
+
             <div class="filter-group">
                 {level_buttons_html}
             </div>
@@ -571,6 +575,7 @@ def generate_dashboard(results, plots=None):
 
     let activeLevel = 'ALL';
     let activeSource = 'ALL';
+    let activeTitleSearch = '';
 
     function initTable() {{
         renderTable(dataset);
@@ -634,6 +639,7 @@ def generate_dashboard(results, plots=None):
 
     function filterData() {{
         const searchQuery = document.getElementById("search-input").value.toLowerCase().trim();
+        const titleSearchQuery = document.getElementById("title-search-input").value.toLowerCase().trim();
 
         const filtered = dataset.filter(item => {{
             const matchesLevel = activeLevel === 'ALL' || item.level === activeLevel;
@@ -645,7 +651,10 @@ def generate_dashboard(results, plots=None):
                 item.journal.toLowerCase().includes(searchQuery) ||
                 item.doi.toLowerCase().includes(searchQuery);
 
-            return matchesLevel && matchesSource && matchesSearch;
+            const matchesTitleSearch = !titleSearchQuery ||
+                item.title.toLowerCase().includes(titleSearchQuery);
+
+            return matchesLevel && matchesSource && matchesSearch && matchesTitleSearch;
         }});
 
         document.getElementById("stat-total").innerText = filtered.length;

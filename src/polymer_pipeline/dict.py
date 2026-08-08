@@ -78,6 +78,14 @@ BLEND_TERMS = [
     "copolyester",
 ]
 
+PHYS_TERMS = [
+    "astro",
+    "astrophyisical",
+    "stars",
+    "black hole",
+    "galaxy",
+    "python"
+]
 
 def _term_for_query(term: str) -> str:
     """Expresa un término limpio dentro de un fragmento booleano genérico.
@@ -101,6 +109,8 @@ C = _or_group(PACKAGING_TERMS)
 D = _or_group(BIOPOLYMER_TERMS)
 E_blends = _or_group(BLEND_TERMS)
 E_additives = _or_group(ADDITIVE_TERMS)
+
+
 
 # Única fuente de verdad de los niveles de búsqueda.
 # Agregar o quitar un nivel aquí (key, label, color, queries y filter_rules opcionales)
