@@ -3,3 +3,4 @@ from polymer_pipeline.fetchers.springer import fetch_springer
 from polymer_pipeline.fetchers.elsevier import fetch_elsevier
 from polymer_pipeline.fetchers.pubmed import fetch_pubmed
 from polymer_pipeline.fetchers.openalex import fetch_openalex
+from polymer_pipeline.fetchers.mdpi import fetch_mdpi

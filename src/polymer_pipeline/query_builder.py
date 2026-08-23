@@ -166,6 +166,7 @@ BUILDERS: dict[str, Callable[[str], str]] = {
     "PubMed": build_pubmed_query,
     "Springer": build_springer_query,
     "Elsevier": build_elsevier_query,
+    "MDPI": build_openalex_query,  # MDPI usa OpenAlex API
     "SemanticScholar": build_semanticscholar_query,
     "EuropePMC": build_europepmc_query,
 }

@@ -16,6 +16,7 @@ from polymer_pipeline.fetchers import (
     fetch_elsevier,
     fetch_pubmed,
     fetch_openalex,
+    fetch_mdpi,
 )
 
 
@@ -27,6 +28,7 @@ def _fetcher_specs(query):
         (fetch_elsevier, (query,), {}),
         (fetch_pubmed, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
         (fetch_openalex, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
+        (fetch_mdpi, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
     ]
 
 
