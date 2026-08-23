@@ -25,6 +25,18 @@ def _extract_doi(raw_doi: str) -> str:
     return raw_doi.replace("https://doi.org/", "").lower().strip()
 
 
+def _reconstruct_abstract(inverted_index: dict | None) -> str:
+    """Reconstruye el abstract a partir del índice invertido de OpenAlex."""
+    if not inverted_index:
+        return ""
+    word_positions = []
+    for word, positions in inverted_index.items():
+        for pos in positions:
+            word_positions.append((pos, word))
+    word_positions.sort(key=lambda x: x[0])
+    return " ".join(word for _, word in word_positions)
+
+
 def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
                mailto: str | None = None, api_key: str | None = None) -> list:
     """Obtiene artículos de MDPI vía OpenAlex con filtro de publisher.
@@ -113,6 +125,8 @@ def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
 
                     year = work.get("publication_year", "")
 
+                    abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
+
                     normalized.append({
                         "title": title,
                         "author": author,
@@ -120,6 +134,7 @@ def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
                         "year": str(year) if year else "",
                         "doi": doi,
                         "source": "MDPI",
+                        "abstract": abstract,
                     })
 
                     if len(normalized) >= max_results:

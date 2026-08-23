@@ -504,6 +504,67 @@ def generate_dashboard(results, plots=None):
             border-radius: 8px;
             display: block;
         }}
+
+        .title-cell {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }}
+
+        .abstract-toggle {{
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--accent-primary);
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            width: fit-content;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .abstract-toggle:hover {{
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.5);
+        }}
+
+        .abstract-toggle .arrow {{
+            transition: transform 0.2s ease;
+            font-size: 0.6rem;
+        }}
+
+        .abstract-toggle.open .arrow {{
+            transform: rotate(90deg);
+        }}
+
+        .abstract-content {{
+            display: none;
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 0.8rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.5;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 0.3rem;
+        }}
+
+        .abstract-content.show {{
+            display: block;
+        }}
+
+        .no-abstract {{
+            font-style: italic;
+            color: rgba(148, 163, 184, 0.5);
+        }}
     </style>
 </head>
 <body>
@@ -606,9 +667,26 @@ def generate_dashboard(results, plots=None):
                 ? `<a class="doi-link" href="https://doi.org/${{item.doi}}" target="_blank">🔗 ${{item.doi}}</a>`
                 : '<span style="color:var(--text-muted); font-style:italic;">No disponible</span>';
 
+            const abstractId = "abstract-" + Math.random().toString(36).substr(2, 9);
+            const hasAbstract = item.abstract && item.abstract.trim().length > 0;
+            const abstractButtonHtml = hasAbstract
+                ? `<button class="abstract-toggle" onclick="toggleAbstract('${{abstractId}}', this)">
+                     <span class="arrow">▶</span> Abstract
+                   </button>`
+                : `<span class="abstract-toggle" style="opacity:0.4; cursor:default;">
+                     <span class="arrow">▶</span> Sin abstract
+                   </span>`;
+            const abstractContentHtml = hasAbstract
+                ? `<div class="abstract-content" id="${{abstractId}}">${{item.abstract}}</div>`
+                : '';
+
             tr.innerHTML = `
                 <td>${{levelBadge}}</td>
-                <td class="title-col">${{item.title}}</td>
+                <td class="title-cell">
+                    <div>${{item.title}}</div>
+                    ${{abstractButtonHtml}}
+                    ${{abstractContentHtml}}
+                </td>
                 <td>${{item.author}}</td>
                 <td>${{item.journal}}</td>
                 <td>${{item.year || 'N/A'}}</td>
@@ -664,6 +742,14 @@ def generate_dashboard(results, plots=None):
         }});
 
         renderTable(filtered);
+    }}
+
+    function toggleAbstract(id, btn) {{
+        const content = document.getElementById(id);
+        if (content) {{
+            content.classList.toggle("show");
+            btn.classList.toggle("open");
+        }}
     }}
 
     window.onload = initTable;

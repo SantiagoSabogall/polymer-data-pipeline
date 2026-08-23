@@ -48,6 +48,8 @@ def fetch_elsevier(query):
 
             doi = entry.get("prism:doi", "").lower().strip()
 
+            abstract = entry.get("dc:description", "")
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -55,6 +57,7 @@ def fetch_elsevier(query):
                 "year": year,
                 "doi": doi,
                 "source": "Elsevier",
+                "abstract": abstract,
             })
         return normalized
 

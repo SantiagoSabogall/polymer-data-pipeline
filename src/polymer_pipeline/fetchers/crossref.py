@@ -5,8 +5,16 @@ from polymer_pipeline.settings import (
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.http import PageFetcher, make_session
+import re
 
 URL = "https://api.crossref.org/works"
+
+
+def _strip_jats_tags(text: str) -> str:
+    """Elimina tags JATS/XML del abstract (ej: <jats:p>, <jats:sec>)."""
+    if not text:
+        return ""
+    return re.sub(r"<[^>]+>", "", text).strip()
 
 
 def fetch_crossref(query):
@@ -49,6 +57,8 @@ def fetch_crossref(query):
             elif "published-online" in item:
                 year = str(item["published-online"]["date-parts"][0][0])
 
+            abstract = _strip_jats_tags(item.get("abstract", ""))
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -56,6 +66,7 @@ def fetch_crossref(query):
                 "year": year,
                 "doi": doi,
                 "source": "Crossref",
+                "abstract": abstract,
             })
         return normalized
 

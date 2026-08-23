@@ -84,6 +84,16 @@ def fetch_pubmed(query: str, max_results: int = 100):
             if eid.get('EIdType') == 'doi' and eid.text:
                 doi = eid.text.lower().strip()
                 break
+
+        abstract = ""
+        abstract_el = article_info.find('Abstract')
+        if abstract_el is not None:
+            abstract_parts = []
+            for text_el in abstract_el.findall('AbstractText'):
+                if text_el.text:
+                    abstract_parts.append(text_el.text)
+            abstract = " ".join(abstract_parts)
+
         results.append({
             "title": title,
             "author": author,
@@ -91,6 +101,7 @@ def fetch_pubmed(query: str, max_results: int = 100):
             "year": year,
             "doi": doi,
             "source": "PubMed",
+            "abstract": abstract,
         })
     set_cache(cache_key, results)
     return results

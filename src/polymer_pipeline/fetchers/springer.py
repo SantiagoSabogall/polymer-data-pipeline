@@ -44,6 +44,8 @@ def fetch_springer(query):
             pub_date = record.get("publicationDate", "")
             year = pub_date[:4] if pub_date else ""
 
+            abstract = record.get("abstract", "")
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -51,6 +53,7 @@ def fetch_springer(query):
                 "year": year,
                 "doi": doi,
                 "source": "Springer",
+                "abstract": abstract,
             })
         return normalized
 

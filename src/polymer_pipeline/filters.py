@@ -69,8 +69,9 @@ def passes_filter(article, level):
 
     rules = LEVEL_FILTER_RULES.get(level)
     if rules:
-        # Todos los grupos de términos del nivel deben tener al menos una coincidencia
-        return all(contains_any_term(title, term_group) for term_group in rules)
+        # Al menos 2 de 3 grupos de términos deben tener coincidencia (filtro balanceado)
+        matches = sum(1 for term_group in rules if contains_any_term(title, term_group))
+        return matches >= 2
 
     # Fallback genérico para niveles sin reglas definidas
     return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)
