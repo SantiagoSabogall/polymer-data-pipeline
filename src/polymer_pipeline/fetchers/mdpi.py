@@ -89,12 +89,23 @@ def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
                 resp = session.get(OPENALEX_API_URL, params=params, timeout=20)
 
                 if resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After", "")
+                    try:
+                        retry_after_s = int(retry_after)
+                    except ValueError:
+                        retry_after_s = 0
+                    if retry_after_s > 120:
+                        print(f"[MDPI] Cuota diaria agotada en OpenAlex (Retry-After={retry_after_s}s "
+                              f"= {retry_after_s // 3600}h). Abortando query. Reintenta mañana o "
+                              f"configura OPENALEX_API_KEY.")
+                        complete = False
+                        break
                     retries += 1
                     if retries > MAX_RETRIES:
                         print(f"[MDPI] Reintentos agotados (cursor={cursor}). Abortando query.")
                         complete = False
                         break
-                    wait = 2 ** retries
+                    wait = min(2 ** retries, 60)
                     print(f"[MDPI] 429. Backoff {wait}s (intento {retries}/{MAX_RETRIES}).")
                     time.sleep(wait)
                     continue

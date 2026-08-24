@@ -143,12 +143,26 @@ def build_elsevier_query(query: str) -> str:
     return _render_boolean(query, _elsevier_term)
 
 
+def _render_s2(query: str, term_fn: TermFn) -> str:
+    """Renderiza grupos con ``term_fn`` usando la sintaxis nativa de Semantic Scholar.
+
+    Semantic Scholar no usa las palabras AND/OR/NOT: los grupos se unen con
+    ``+`` (AND), los términos dentro del grupo con ``|`` (OR) y las frases
+    quedan entrecomilladas. Ejemplo: ``(a | "b c") + (d | e)``.
+    """
+    groups = parse_boolean_query(query)
+    if not groups:
+        return query
+    rendered = ["(" + " | ".join(term_fn(term) for term in group) + ")" for group in groups]
+    return " + ".join(rendered)
+
+
 def build_semanticscholar_query(query: str) -> str:
     """Traduce la consulta genérica a sintaxis de Semantic Scholar.
 
-    Preparado para un futuro fetcher; aún no se usa en el pipeline.
+    Válida tanto para ``/paper/search`` como para ``/paper/search/bulk``.
     """
-    return _render_boolean(query, _semanticscholar_term)
+    return _render_s2(query, _semanticscholar_term)
 
 
 def build_europepmc_query(query: str) -> str:

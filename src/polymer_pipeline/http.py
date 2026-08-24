@@ -25,8 +25,14 @@ def make_session(
     retry = Retry(
         total=retries,
         backoff_factor=backoff_factor,
+        backoff_max=30,
         status_forcelist=list(status_forcelist),
         raise_on_status=False,
+        # Ignorar Retry-After del servidor: algunas APIs (ej. OpenAlex con la
+        # cuota diaria agotada) responden 429 con Retry-After de HORAS y el
+        # adapter se quedaría dormido ese tiempo, bloqueando el pipeline.
+        # Cada fetcher gestiona el 429 con su propio backoff acotado.
+        respect_retry_after_header=False,
     )
     session = requests.Session()
     adapter = HTTPAdapter(max_retries=retry, pool_connections=10, pool_maxsize=10)

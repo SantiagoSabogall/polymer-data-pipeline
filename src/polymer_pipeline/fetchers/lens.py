@@ -92,15 +92,26 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
                     break
 
                 for doc in results:
-                    title = doc.get("title", "Sin título")
-                    abstract = doc.get("abstract", "")
+                    if not isinstance(doc, dict):
+                        continue
 
-                    authors = doc.get("authors", [])
+                    title = doc.get("title") or "Sin título"
+                    if isinstance(title, list):
+                        title = title[0] if title else "Sin título"
+                    abstract = doc.get("abstract", "")
+                    if not isinstance(abstract, str):
+                        abstract = ""
+
+                    authors = doc.get("authors") or []
+                    author = "Desconocido"
                     if authors:
                         first = authors[0]
-                        author = f"{first.get('first_name', '')} {first.get('last_name', '')}".strip()
-                    else:
-                        author = "Desconocido"
+                        if isinstance(first, dict):
+                            author = f"{first.get('first_name', '')} {first.get('last_name', '')}".strip()
+                        elif isinstance(first, str):
+                            author = first
+                        if not author:
+                            author = "Desconocido"
 
                     source = doc.get("source", {})
                     if isinstance(source, dict):
@@ -110,21 +121,30 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
 
                     year = str(doc.get("year_published", "")) if doc.get("year_published") else ""
 
-                    external_ids = doc.get("external_ids", [])
+                    external_ids = doc.get("external_ids") or []
                     doi = ""
                     for eid in external_ids:
-                        if eid.get("type") == "doi":
-                            doi = eid.get("value", "").lower().strip()
+                        if isinstance(eid, dict) and eid.get("type") == "doi":
+                            doi = (eid.get("value") or "").lower().strip()
                             break
 
                     pdf_url = ""
                     oa = doc.get("open_access") or {}
-                    locations = oa.get("locations") or []
-                    for loc in locations:
-                        url = loc.get("pdf_url", "") or ""
-                        if url:
-                            pdf_url = url
-                            break
+                    if isinstance(oa, dict):
+                        locations = oa.get("locations") or {}
+                        if isinstance(locations, dict):
+                            # Esquema actual de Lens: locations.pdf_urls es una lista.
+                            pdf_urls = locations.get("pdf_urls") or []
+                            if pdf_urls:
+                                pdf_url = pdf_urls[0]
+                        elif isinstance(locations, list):
+                            # Esquema antiguo: lista de {pdf_url, ...}.
+                            for loc in locations:
+                                if isinstance(loc, dict):
+                                    url = loc.get("pdf_url", "") or ""
+                                    if url:
+                                        pdf_url = url
+                                        break
 
                     normalized.append({
                         "title": title,

@@ -1,4 +1,5 @@
 import json
+import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -21,36 +22,49 @@ from polymer_pipeline.fetchers import (
     fetch_lens,
 )
 
+# Semantic Scholar activa: usa /paper/search/bulk con throttle de 1 req/s
+# (límite estándar con API key) y backoff ante 429. Funciona también sin key.
+ENABLE_SEMANTIC_SCHOLAR = True
+
 
 def _fetcher_specs(query):
     """Especificaciones (fn, args, kwargs) de todos los fetchers para una consulta."""
-    return [
+    specs = [
         (fetch_crossref, (query,), {}),
         (fetch_springer, (query,), {}),
         (fetch_elsevier, (query,), {}),
         (fetch_pubmed, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
         (fetch_openalex, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
         (fetch_mdpi, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
-        (fetch_semantic_scholar, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
-        (fetch_lens, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}),
     ]
+    if ENABLE_SEMANTIC_SCHOLAR:
+        specs.append((fetch_semantic_scholar, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}))
+    specs.append((fetch_lens, (query,), {"max_results": TOTAL_RESULTS_PER_QUERY}))
+    return specs
 
 
 def _fetch_task(level, query, fn, args, kwargs):
+    name = fn.__name__
+    print(f"  [{name}] Iniciando: {query[:60]}...")
+    t0 = time.monotonic()
     try:
+        articles = fn(*args, **kwargs)
+        elapsed = time.monotonic() - t0
+        print(f"  [{name}] Terminado en {elapsed:.1f}s -> {len(articles)} artículos.")
         return {
             "level": level,
             "query": query,
-            "source": fn.__name__,
+            "source": name,
             "ok": True,
-            "articles": fn(*args, **kwargs),
+            "articles": articles,
         }
     except Exception as e:
-        print(f"  [Error] {fn.__name__} falló para {query[:60]}: {e}")
+        elapsed = time.monotonic() - t0
+        print(f"  [Error] {name} falló tras {elapsed:.1f}s para {query[:60]}: {e}")
         return {
             "level": level,
             "query": query,
-            "source": fn.__name__,
+            "source": name,
             "ok": False,
             "articles": [],
         }

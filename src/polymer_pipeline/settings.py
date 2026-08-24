@@ -31,3 +31,6 @@ NCBI_API_KEY = os.getenv("PUBMED_API_KEY")
 OPENALEX_EMAIL = os.getenv("OPENALEX_EMAIL", "[EMAIL_ADDRESS]")
 OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY")
 LENS_API_KEY = os.getenv("LENS_API_KEY")
+# Límite estándar con API key gratuita: 1 req/s en todos los endpoints
+# (el fetcher aplica throttle global; ver fetchers/semantic_scholar.py).
+SEMANTIC_SCHOLAR_API_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
