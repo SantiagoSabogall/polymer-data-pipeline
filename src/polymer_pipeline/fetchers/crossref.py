@@ -1,5 +1,5 @@
 from polymer_pipeline.settings import (
-    BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
+    TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
 )
 from polymer_pipeline.cache import get_cached, set_cache
@@ -8,6 +8,10 @@ from polymer_pipeline.http import PageFetcher, make_session
 import re
 
 URL = "https://api.crossref.org/works"
+
+# Crossref polite pool: ~50 req/s. Optimizado para máximo rendimiento.
+CROSSREF_BATCH_SIZE = 100
+CROSSREF_SLEEP = 0.1
 
 
 def _strip_jats_tags(text: str) -> str:
@@ -32,7 +36,7 @@ def fetch_crossref(query):
     def build_params(start):
         return {
             "query": translated,
-            "rows": BATCH_SIZE,
+            "rows": CROSSREF_BATCH_SIZE,
             "offset": start,
         }
 
@@ -59,6 +63,13 @@ def fetch_crossref(query):
 
             abstract = _strip_jats_tags(item.get("abstract", ""))
 
+            pdf_url = ""
+            for link in item.get("link", []):
+                ct = link.get("content-type", "")
+                if "pdf" in ct.lower():
+                    pdf_url = link.get("URL", "")
+                    break
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -67,6 +78,7 @@ def fetch_crossref(query):
                 "doi": doi,
                 "source": "Crossref",
                 "abstract": abstract,
+                "pdf_url": pdf_url,
             })
         return normalized
 
@@ -75,8 +87,8 @@ def fetch_crossref(query):
 
     fetcher = PageFetcher(
         url=URL,
-        batch_size=BATCH_SIZE,
-        sleep_between=SLEEP_BETWEEN_BATCHES,
+        batch_size=CROSSREF_BATCH_SIZE,
+        sleep_between=CROSSREF_SLEEP,
         total_limit=TOTAL_RESULTS_PER_QUERY,
         build_params=build_params,
         extract_items=extract_items,

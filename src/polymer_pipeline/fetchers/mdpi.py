@@ -17,6 +17,9 @@ MDPI_PUBLISHER_ID = "https://openalex.org/P4310310987"
 MAX_RETRIES = 5
 MAX_PER_PAGE = 200
 
+# MDPI usa OpenAlex API: ~10 req/s. 0.2s entre requests.
+MDPI_SLEEP = 0.2
+
 
 def _extract_doi(raw_doi: str) -> str:
     """Normaliza el DOI de OpenAlex (URL completa) a solo el identificador."""
@@ -127,6 +130,13 @@ def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
 
                     abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
 
+                    pdf_url = ""
+                    oa = work.get("open_access") or {}
+                    pdf_url = oa.get("oa_url", "") or ""
+                    if not pdf_url:
+                        best_loc = work.get("best_oa_location") or {}
+                        pdf_url = best_loc.get("pdf_url", "") or ""
+
                     normalized.append({
                         "title": title,
                         "author": author,
@@ -135,6 +145,7 @@ def fetch_mdpi(query: str, max_results: int = 100, sleep: float = 0.2,
                         "doi": doi,
                         "source": "MDPI",
                         "abstract": abstract,
+                        "pdf_url": pdf_url,
                     })
 
                     if len(normalized) >= max_results:

@@ -8,6 +8,9 @@ OPENALEX_API_URL = "https://api.openalex.org/works"
 MAX_RETRIES = 5
 MAX_PER_PAGE = 200  # límite duro impuesto por OpenAlex
 
+# OpenAlex polite pool: ~10 req/s. 0.2s entre requests.
+OPENALEX_SLEEP = 0.2
+
 
 def _extract_doi(raw_doi: str) -> str:
     """OpenAlex devuelve el DOI como URL completa (https://doi.org/10.xxxx).
@@ -123,6 +126,13 @@ def fetch_openalex(query: str, max_results: int = 100, sleep: float = 0.2,
 
                     abstract = _reconstruct_abstract(work.get("abstract_inverted_index"))
 
+                    pdf_url = ""
+                    oa = work.get("open_access") or {}
+                    pdf_url = oa.get("oa_url", "") or ""
+                    if not pdf_url:
+                        best_loc = work.get("best_oa_location") or {}
+                        pdf_url = best_loc.get("pdf_url", "") or ""
+
                     normalized.append({
                         "title": title,
                         "author": author,
@@ -131,6 +141,7 @@ def fetch_openalex(query: str, max_results: int = 100, sleep: float = 0.2,
                         "doi": doi,
                         "source": "OpenAlex",
                         "abstract": abstract,
+                        "pdf_url": pdf_url,
                     })
 
                     if len(normalized) >= max_results:

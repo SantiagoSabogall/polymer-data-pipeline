@@ -5,7 +5,7 @@ def export_csv(articles, filepath="consolidated_results.csv"):
     if not articles:
         print("[Export] No articles to export.")
         return
-    fieldnames = ["level", "title", "author", "journal", "year", "doi", "source"]
+    fieldnames = ["level", "title", "author", "journal", "year", "doi", "source", "pdf_url"]
     with open(filepath, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

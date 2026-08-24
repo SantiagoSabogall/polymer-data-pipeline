@@ -19,6 +19,7 @@ dependencies = [
     "pandas>=1.5",
     "matplotlib>=3.7",
     "lxml>=4.9",
+    "semanticscholar>=0.12",
 ]
 
 [project.scripts]

@@ -565,6 +565,41 @@ def generate_dashboard(results, plots=None):
             font-style: italic;
             color: rgba(148, 163, 184, 0.5);
         }}
+
+        .pdf-btn {{
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #22c55e;
+            padding: 0.25rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .pdf-btn:hover {{
+            background: rgba(34, 197, 94, 0.2);
+            border-color: rgba(34, 197, 94, 0.5);
+        }}
+
+        .pdf-btn.no-pdf {{
+            opacity: 0.3;
+            cursor: default;
+            pointer-events: none;
+        }}
+
+        .title-actions {{
+            display: flex;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+        }}
     </style>
 </head>
 <body>
@@ -680,11 +715,19 @@ def generate_dashboard(results, plots=None):
                 ? `<div class="abstract-content" id="${{abstractId}}">${{item.abstract}}</div>`
                 : '';
 
+            const hasPdf = item.pdf_url && item.pdf_url.trim().length > 0;
+            const pdfButtonHtml = hasPdf
+                ? `<a class="pdf-btn" href="${{item.pdf_url}}" target="_blank">📄 PDF</a>`
+                : `<span class="pdf-btn no-pdf">📄 Sin PDF</span>`;
+
             tr.innerHTML = `
                 <td>${{levelBadge}}</td>
                 <td class="title-cell">
                     <div>${{item.title}}</div>
-                    ${{abstractButtonHtml}}
+                    <div class="title-actions">
+                        ${{abstractButtonHtml}}
+                        ${{pdfButtonHtml}}
+                    </div>
                     ${{abstractContentHtml}}
                 </td>
                 <td>${{item.author}}</td>

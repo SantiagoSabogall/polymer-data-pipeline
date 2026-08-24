@@ -94,6 +94,8 @@ def fetch_pubmed(query: str, max_results: int = 100):
                     abstract_parts.append(text_el.text)
             abstract = " ".join(abstract_parts)
 
+        pdf_url = ""
+
         results.append({
             "title": title,
             "author": author,
@@ -102,6 +104,7 @@ def fetch_pubmed(query: str, max_results: int = 100):
             "doi": doi,
             "source": "PubMed",
             "abstract": abstract,
+            "pdf_url": pdf_url,
         })
     set_cache(cache_key, results)
     return results

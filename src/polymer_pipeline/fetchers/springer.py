@@ -46,6 +46,12 @@ def fetch_springer(query):
 
             abstract = record.get("abstract", "")
 
+            pdf_url = ""
+            for u in record.get("url", []):
+                if isinstance(u, dict) and "pdf" in u.get("format", "").lower():
+                    pdf_url = u.get("value", "")
+                    break
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -54,6 +60,7 @@ def fetch_springer(query):
                 "doi": doi,
                 "source": "Springer",
                 "abstract": abstract,
+                "pdf_url": pdf_url,
             })
         return normalized
 

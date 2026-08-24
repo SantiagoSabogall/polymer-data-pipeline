@@ -159,6 +159,11 @@ def build_europepmc_query(query: str) -> str:
     return _render_boolean(query, _europepmc_term)
 
 
+def build_lens_query(query: str) -> str:
+    """Traduce la consulta genérica a sintaxis Lens.org (query_string)."""
+    return _render_boolean(query, _semanticscholar_term)
+
+
 # Registro extensible: agregar una nueva API = registrar aquí su builder.
 BUILDERS: dict[str, Callable[[str], str]] = {
     "Crossref": build_crossref_query,
@@ -168,6 +173,7 @@ BUILDERS: dict[str, Callable[[str], str]] = {
     "Elsevier": build_elsevier_query,
     "MDPI": build_openalex_query,  # MDPI usa OpenAlex API
     "SemanticScholar": build_semanticscholar_query,
+    "Lens": build_semanticscholar_query,  # Lens usa sintaxis similar
     "EuropePMC": build_europepmc_query,
 }
 

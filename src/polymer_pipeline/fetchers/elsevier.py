@@ -50,6 +50,8 @@ def fetch_elsevier(query):
 
             abstract = entry.get("dc:description", "")
 
+            pdf_url = ""
+
             normalized.append({
                 "title": title,
                 "author": author,
@@ -58,6 +60,7 @@ def fetch_elsevier(query):
                 "doi": doi,
                 "source": "Elsevier",
                 "abstract": abstract,
+                "pdf_url": pdf_url,
             })
         return normalized
 

@@ -13,6 +13,8 @@ SOURCES: dict[str, dict] = {
     "PubMed": {"color": "#22c55e", "builtin_relevance": False},
     "OpenAlex": {"color": "#fb923c", "builtin_relevance": False},
     "MDPI": {"color": "#0284c7", "builtin_relevance": True},
+    "SemanticScholar": {"color": "#a855f7", "builtin_relevance": False},
+    "Lens": {"color": "#14b8a6", "builtin_relevance": False},
 }
 
 SOURCE_NAMES = list(SOURCES)
