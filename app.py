@@ -271,68 +271,37 @@ st.caption("Dashboard de artículos científicos consolidados y deduplicados")
 
 # ── Ejecutar pipeline ──────────────────────────────────────────────────
 if run_clicked:
+    # Barra de progreso y spinner
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     def update_progress(current: int, total: int, source: str) -> None:
-        progress_bar.progress(current / total, text=f"[{current}/{total}] {source}...")
+        progress_bar.progress(current / total, text=f"[{current}/{total}] Consultando {source}...")
 
     # Determinar qué ejecutar según el modo
+    custom_queries = None
+    custom_filter_rules = None
+
     if search_mode == "📝 Búsqueda libre" and raw_query:
-        # Para búsqueda libre, usamos un nivel "custom" con la query del usuario
-        # Necesitamos inyectar la query en SEARCH_QUERIES temporalmente
-        import polymer_pipeline.dict as dict_mod
-        original_queries = dict_mod.SEARCH_QUERIES.copy()
-        original_rules = dict_mod.LEVEL_FILTER_RULES.copy()
-
-        dict_mod.SEARCH_QUERIES = {"custom": [raw_query]}
+        custom_queries = {"custom": [raw_query]}
         if custom_filter_groups:
-            dict_mod.LEVEL_FILTER_RULES = {"custom": custom_filter_groups}
-        else:
-            dict_mod.LEVEL_FILTER_RULES.pop("custom", None)
-
-        articles = run_pipeline(
-            levels=["custom"],
-            sources=selected_sources,
-            max_results=max_results,
-            progress_callback=update_progress,
-        )
-
-        # Restaurar
-        dict_mod.SEARCH_QUERIES = original_queries
-        dict_mod.LEVEL_FILTER_RULES = original_rules
+            custom_filter_rules = {"custom": custom_filter_groups}
 
     elif search_mode == "🔧 Constructor visual" and builder_groups:
-        # Constructor visual: generar query desde grupos
         generated_query = build_boolean_query(builder_groups, bool_operator)
-
-        import polymer_pipeline.dict as dict_mod
-        original_queries = dict_mod.SEARCH_QUERIES.copy()
-        original_rules = dict_mod.LEVEL_FILTER_RULES.copy()
-
-        dict_mod.SEARCH_QUERIES = {"custom": [generated_query]}
+        custom_queries = {"custom": [generated_query]}
         if use_filter:
-            dict_mod.LEVEL_FILTER_RULES = {"custom": [g["terms"] for g in builder_groups]}
-        else:
-            dict_mod.LEVEL_FILTER_RULES.pop("custom", None)
+            custom_filter_rules = {"custom": [g["terms"] for g in builder_groups]}
 
+    # Ejecutar con spinner
+    with st.spinner("🔄 Consultando APIs científicas... Esto puede tomar 30-60 segundos."):
         articles = run_pipeline(
-            levels=["custom"],
+            levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
             sources=selected_sources,
             max_results=max_results,
             progress_callback=update_progress,
-        )
-
-        dict_mod.SEARCH_QUERIES = original_queries
-        dict_mod.LEVEL_FILTER_RULES = original_rules
-
-    else:
-        # Modo presets
-        articles = run_pipeline(
-            levels=selected_levels or [l["key"] for l in LEVELS],
-            sources=selected_sources,
-            max_results=max_results,
-            progress_callback=update_progress,
+            custom_queries=custom_queries,
+            custom_filter_rules=custom_filter_rules,
         )
 
     progress_bar.empty()

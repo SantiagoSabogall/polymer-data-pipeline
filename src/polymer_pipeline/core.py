@@ -138,6 +138,8 @@ def run_pipeline(
     sources: list[str] | None = None,
     max_results: int = 250,
     progress_callback: Callable | None = None,
+    custom_queries: dict[str, list[str]] | None = None,
+    custom_filter_rules: dict[str, list[list[str]]] | None = None,
 ) -> list[dict]:
     """Ejecuta el pipeline completo con los niveles y fuentes indicados.
 
@@ -146,17 +148,27 @@ def run_pipeline(
         sources: Lista de fuentes API a usar (default: todas).
         max_results: Máximo de resultados por query por fuente.
         progress_callback: fn(completed, total, source_name) para progreso.
+        custom_queries: Queries personalizadas {level: [query_strings]}.
+                        Si se provee, tiene prioridad sobre SEARCH_QUERIES.
+        custom_filter_rules: Reglas de filtro personalizadas {level: [groups]}.
+                             Si se provee, tiene prioridad sobre LEVEL_FILTER_RULES.
 
     Returns:
         Lista de artículos normalizados, filtrados y deduplicados.
     """
-    # Seleccionar queries
-    if levels:
+    # Seleccionar queries: custom_queries tiene prioridad
+    if custom_queries:
+        queries = custom_queries
+    elif levels:
         queries = {k: v for k, v in SEARCH_QUERIES.items() if k in levels}
     else:
         queries = dict(SEARCH_QUERIES)
 
-    filter_rules = {k: v for k, v in LEVEL_FILTER_RULES.items() if k in queries}
+    # Seleccionar reglas de filtro
+    if custom_filter_rules is not None:
+        filter_rules = custom_filter_rules
+    else:
+        filter_rules = {k: v for k, v in LEVEL_FILTER_RULES.items() if k in queries}
 
     # Construir tareas
     tasks: list[tuple] = []
