@@ -24,8 +24,8 @@ logging.basicConfig(
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from polymer_pipeline.settings import load_settings
-from polymer_pipeline.dict import LEVELS, SOURCE_NAMES, SEARCH_QUERIES
-from polymer_pipeline.sources import SOURCES
+from polymer_pipeline.dict import LEVELS, SEARCH_QUERIES
+from polymer_pipeline.sources import SOURCES, SOURCE_NAMES
 from polymer_pipeline.core import run_pipeline, filter_articles, compute_quality_metrics
 from polymer_pipeline.plots_interactive import generate_interactive_plots
 from polymer_pipeline.export import export_csv, export_bibtex
