@@ -86,6 +86,14 @@ with st.sidebar:
     # ── Estado inicial desde preset guardado ────────────────────────────
     preset_data = saved_presets.get(selected_preset, {}) if selected_preset != "(nueva búsqueda)" else {}
 
+    # Inicializar variables (se definen en cada modo)
+    selected_levels = None
+    raw_query = None
+    builder_groups = None
+    bool_operator = "AND"
+    custom_filter_groups = None
+    use_filter = True
+
     # ── MODO 1: Presets ─────────────────────────────────────────────────
     if search_mode == "📋 Presets (L1-L4)":
         st.subheader("Niveles de búsqueda")
@@ -282,27 +290,52 @@ if run_clicked:
     custom_queries = None
     custom_filter_rules = None
 
+    logging.info(f"[DEBUG] search_mode={search_mode}")
+    logging.info(f"[DEBUG] raw_query={raw_query}")
+    logging.info(f"[DEBUG] builder_groups={builder_groups}")
+
     if search_mode == "📝 Búsqueda libre" and raw_query:
         custom_queries = {"custom": [raw_query]}
         if custom_filter_groups:
             custom_filter_rules = {"custom": custom_filter_groups}
+        else:
+            custom_filter_rules = {"custom": []}
+        logging.info(f"[DEBUG] Modo búsqueda libre: custom_queries={custom_queries}")
 
-    elif search_mode == "🔧 Constructor visual" and builder_groups:
-        generated_query = build_boolean_query(builder_groups, bool_operator)
-        custom_queries = {"custom": [generated_query]}
-        if use_filter:
-            custom_filter_rules = {"custom": [g["terms"] for g in builder_groups]}
+    elif search_mode == "🔧 Constructor visual":
+        if builder_groups and all(g.get("terms") for g in builder_groups):
+            generated_query = build_boolean_query(builder_groups, bool_operator)
+            custom_queries = {"custom": [generated_query]}
+            if use_filter:
+                custom_filter_rules = {"custom": [g["terms"] for g in builder_groups]}
+            else:
+                custom_filter_rules = {"custom": []}
+            logging.info(f"[DEBUG] Modo builder: query={generated_query}")
+        else:
+            logging.warning("[DEBUG] Builder: no groups with terms")
+
+    else:
+        logging.info(f"[DEBUG] Modo presets: levels={selected_levels}")
+
+    logging.info(f"[DEBUG] custom_queries={custom_queries}")
+    logging.info(f"[DEBUG] custom_filter_rules={custom_filter_rules}")
 
     # Ejecutar con spinner
     with st.spinner("🔄 Consultando APIs científicas... Esto puede tomar 30-60 segundos."):
-        articles = run_pipeline(
-            levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
-            sources=selected_sources,
-            max_results=max_results,
-            progress_callback=update_progress,
-            custom_queries=custom_queries,
-            custom_filter_rules=custom_filter_rules,
-        )
+        try:
+            articles = run_pipeline(
+                levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
+                sources=selected_sources,
+                max_results=max_results,
+                progress_callback=update_progress,
+                custom_queries=custom_queries,
+                custom_filter_rules=custom_filter_rules,
+            )
+            logging.info(f"[DEBUG] Pipeline returned {len(articles)} articles")
+        except Exception as e:
+            logging.error(f"[DEBUG] Pipeline error: {e}")
+            st.error(f"Error: {e}")
+            articles = []
 
     progress_bar.empty()
     status_text.empty()
