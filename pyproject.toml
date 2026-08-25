@@ -20,6 +20,8 @@ dependencies = [
     "matplotlib>=3.7",
     "lxml>=4.9",
     "semanticscholar>=0.12",
+    "streamlit>=1.30",
+    "plotly>=5.18",
 ]
 
 [project.scripts]

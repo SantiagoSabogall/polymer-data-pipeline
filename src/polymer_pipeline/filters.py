@@ -61,19 +61,36 @@ def contains_any_term(text: str | None, terms: list[str]) -> bool:
     return False
 
 
-def passes_filter(article: dict, level: str) -> bool:
+def passes_filter(
+    article: dict,
+    level: str,
+    custom_rules: dict[str, list[list[str]]] | None = None,
+) -> bool:
+    """Verifica si un artículo pasa el filtro de relevancia para un nivel.
+
+    Args:
+        article: Dict con campos del artículo.
+        level: Identificador del nivel (L1-L4 o "custom").
+        custom_rules: Reglas de filtro personalizadas {level: [groups]}.
+                      Si se provee, tiene prioridad sobre LEVEL_FILTER_RULES.
+    """
     title = article.get("title", "")
     if not title or title == "Sin título":
         return False
 
-    # Springer y Elsevier ya filtran por relevancia en su propia API
+    # Fuentes con relevancia built-in saltan el filtro
     source = article.get("source", "")
     if source in SOURCES_WITH_BUILTIN_FILTER:
         return True
 
-    rules = LEVEL_FILTER_RULES.get(level)
+    # Buscar reglas: primero en custom_rules, luego en LEVEL_FILTER_RULES
+    rules = None
+    if custom_rules:
+        rules = custom_rules.get(level)
+    if rules is None:
+        rules = LEVEL_FILTER_RULES.get(level)
+
     if rules:
-        # Al menos 2 de 3 grupos de términos deben tener coincidencia (filtro balanceado)
         matches = sum(1 for term_group in rules if contains_any_term(title, term_group))
         return matches >= 2
 
