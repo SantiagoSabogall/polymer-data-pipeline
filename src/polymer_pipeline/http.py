@@ -5,11 +5,17 @@ Evita duplicar el while-loop de paginación que antes vivía en cada fetcher
 para todos los fetchers.
 """
 
+from __future__ import annotations
+
+import logging
 import time
+from collections.abc import Callable
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+logger = logging.getLogger(__name__)
 
 
 def make_session(
@@ -28,10 +34,6 @@ def make_session(
         backoff_max=30,
         status_forcelist=list(status_forcelist),
         raise_on_status=False,
-        # Ignorar Retry-After del servidor: algunas APIs (ej. OpenAlex con la
-        # cuota diaria agotada) responden 429 con Retry-After de HORAS y el
-        # adapter se quedaría dormido ese tiempo, bloqueando el pipeline.
-        # Cada fetcher gestiona el 429 con su propio backoff acotado.
         respect_retry_after_header=False,
     )
     session = requests.Session()
@@ -59,9 +61,9 @@ class PageFetcher:
         batch_size: int,
         sleep_between: float,
         total_limit: int,
-        build_params,
-        extract_items,
-        extract_total,
+        build_params: Callable[[int], dict],
+        extract_items: Callable[[dict], list],
+        extract_total: Callable[[dict], int],
         name: str = "API",
         initial_start: int = 0,
     ) -> None:
@@ -83,26 +85,28 @@ class PageFetcher:
             try:
                 resp = session.get(self.url, params=params, timeout=15)
             except requests.RequestException as e:
-                print(f"[{self.name}] Falló la petición en start={cur}: {e}")
+                logger.error("[%s] Falló la petición en start=%d: %s", self.name, cur, e)
                 cur += self.batch_size
                 continue
 
             if resp.status_code == 429:
-                # El adapter de retries normalmente ya lo gestionó; guard por si llega.
-                print(f"[{self.name}] 429 en start={cur}. Pausando 5s y saltando el lote.")
+                logger.warning("[%s] 429 en start=%d. Pausando 5s y saltando el lote.",
+                               self.name, cur)
                 time.sleep(5)
                 cur += self.batch_size
                 continue
 
             if resp.status_code != 200:
-                print(f"[{self.name}] Error {resp.status_code} en start={cur}. Se omite el lote.")
+                logger.warning("[%s] Error %d en start=%d. Se omite el lote.",
+                               self.name, resp.status_code, cur)
                 cur += self.batch_size
                 continue
 
             try:
                 data = resp.json()
             except ValueError:
-                print(f"[{self.name}] Respuesta no JSON en start={cur}. Se omite el lote.")
+                logger.warning("[%s] Respuesta no JSON en start=%d. Se omite el lote.",
+                               self.name, cur)
                 cur += self.batch_size
                 continue
 

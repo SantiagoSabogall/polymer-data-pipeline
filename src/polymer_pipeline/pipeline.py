@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import json
+import logging
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from polymer_pipeline.settings import (
     load_settings, TOTAL_RESULTS_PER_QUERY, MAX_WORKERS,
@@ -11,6 +15,7 @@ from polymer_pipeline.filters import passes_filter
 from polymer_pipeline.plots import generate_all_plots
 from polymer_pipeline.dashboard import generate_dashboard
 from polymer_pipeline.export import export_csv, export_bibtex
+from polymer_pipeline.downloader import ArticleDownloader
 from polymer_pipeline.fetchers import (
     fetch_crossref,
     fetch_springer,
@@ -22,12 +27,14 @@ from polymer_pipeline.fetchers import (
     fetch_lens,
 )
 
+logger = logging.getLogger(__name__)
+
 # Semantic Scholar activa: usa /paper/search/bulk con throttle de 1 req/s
 # (límite estándar con API key) y backoff ante 429. Funciona también sin key.
 ENABLE_SEMANTIC_SCHOLAR = True
 
 
-def _fetcher_specs(query):
+def _fetcher_specs(query: str) -> list[tuple]:
     """Especificaciones (fn, args, kwargs) de todos los fetchers para una consulta."""
     specs = [
         (fetch_crossref, (query,), {}),
@@ -43,14 +50,14 @@ def _fetcher_specs(query):
     return specs
 
 
-def _fetch_task(level, query, fn, args, kwargs):
+def _fetch_task(level: str, query: str, fn, args: tuple, kwargs: dict) -> dict:
     name = fn.__name__
-    print(f"  [{name}] Iniciando: {query[:60]}...")
+    logger.info("[%s] Iniciando: %s...", name, query[:60])
     t0 = time.monotonic()
     try:
         articles = fn(*args, **kwargs)
         elapsed = time.monotonic() - t0
-        print(f"  [{name}] Terminado en {elapsed:.1f}s -> {len(articles)} artículos.")
+        logger.info("[%s] Terminado en %.1fs -> %d artículos.", name, elapsed, len(articles))
         return {
             "level": level,
             "query": query,
@@ -60,7 +67,7 @@ def _fetch_task(level, query, fn, args, kwargs):
         }
     except Exception as e:
         elapsed = time.monotonic() - t0
-        print(f"  [Error] {name} falló tras {elapsed:.1f}s para {query[:60]}: {e}")
+        logger.error("[Error] %s falló tras %.1fs para %s: %s", name, elapsed, query[:60], e)
         return {
             "level": level,
             "query": query,
@@ -70,9 +77,9 @@ def _fetch_task(level, query, fn, args, kwargs):
         }
 
 
-def _collect(tasks):
+def _collect(tasks: list[tuple]) -> dict:
     """Ejecuta todas las tareas (nivel, consulta, fetcher) en un pool global."""
-    results_by_query = {}
+    results_by_query: dict = {}
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {executor.submit(_fetch_task, *t): t for t in tasks}
         for future in as_completed(futures):
@@ -82,18 +89,22 @@ def _collect(tasks):
     return results_by_query
 
 
-def _filter_and_dedupe(results_by_query, seen_dois, seen_titles):
+def _filter_and_dedupe(
+    results_by_query: dict,
+    seen_dois: set[str],
+    seen_titles: set[str],
+) -> tuple[list[dict], list[tuple]]:
     """Filtra y deduplica; devuelve artículos únicos y un log de stats por consulta."""
-    all_normalized_articles = []
-    stats = []
+    all_normalized_articles: list[dict] = []
+    stats: list[tuple] = []
 
     for level, queries in SEARCH_QUERIES.items():
-        print(f"\n>>> Procesando nivel: {level}")
+        logger.info(">>> Procesando nivel: %s", level)
 
         for q in queries:
-            print(f"  Consulta: {q[:80]}...")
+            logger.info("  Consulta: %s...", q[:80])
 
-            combined_raw = []
+            combined_raw: list[dict] = []
             for result in results_by_query.get((level, q), []):
                 combined_raw.extend(result["articles"])
 
@@ -105,17 +116,21 @@ def _filter_and_dedupe(results_by_query, seen_dois, seen_titles):
                     rejected_items.append(art)
 
             if rejected_items:
-                rejected_by_source = {}
+                rejected_by_source: dict[str, int] = {}
                 for art in rejected_items:
-                    rejected_by_source[art["source"]] = rejected_by_source.get(art["source"], 0) + 1
-                print(f"    [Filtro] Rechazados: {len(rejected_items)}/{len(combined_raw)} -> {rejected_by_source}")
+                    src = art.get("source", "")
+                    rejected_by_source[src] = rejected_by_source.get(src, 0) + 1
+                logger.warning(
+                    "    [Filtro] Rechazados: %d/%d -> %s",
+                    len(rejected_items), len(combined_raw), rejected_by_source,
+                )
 
             new_additions_count = 0
             duplicates_count = 0
 
             for art in accepted:
-                doi = art["doi"]
-                title = art["title"].lower().strip()
+                doi = art.get("doi", "")
+                title = art.get("title", "").lower().strip()
 
                 if doi and doi not in seen_dois:
                     seen_dois.add(doi)
@@ -130,48 +145,64 @@ def _filter_and_dedupe(results_by_query, seen_dois, seen_titles):
                 else:
                     duplicates_count += 1
 
-            print(f"  --> Agregados: {new_additions_count} nuevos | Duplicados omitidos: {duplicates_count}")
+            logger.info(
+                "  --> Agregados: %d nuevos | Duplicados omitidos: %d",
+                new_additions_count, duplicates_count,
+            )
             stats.append((level, q, new_additions_count, duplicates_count))
 
     return all_normalized_articles, stats
 
 
-def main():
+def main() -> None:
     load_settings()
 
-    print("=" * 60)
-    print(" INICIANDO PIPELINE DE BÚSQUEDA CIENTÍFICA CONSOLIDADA ")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info(" INICIANDO PIPELINE DE BÚSQUEDA CIENTÍFICA CONSOLIDADA ")
+    logger.info("=" * 60)
 
-    tasks = []
+    tasks: list[tuple] = []
     for level, queries in SEARCH_QUERIES.items():
         for q in queries:
             for fn, args, kwargs in _fetcher_specs(q):
                 tasks.append((level, q, fn, args, kwargs))
 
-    print(f"[Pipeline] Lanzando {len(tasks)} tareas (nivel, consulta, API) en paralelo...")
+    logger.info("[Pipeline] Lanzando %d tareas (nivel, consulta, API) en paralelo...", len(tasks))
     results_by_query = _collect(tasks)
 
-    seen_dois = set()
-    seen_titles = set()
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+    seen_dois: set[str] = set()
+    seen_titles: set[str] = set()
     all_normalized_articles, _ = _filter_and_dedupe(results_by_query, seen_dois, seen_titles)
 
-    json_output_path = "consolidated_results.json"
+    json_output_path = PROJECT_ROOT / "consolidated_results.json"
     with open(json_output_path, "w", encoding="utf-8") as f:
         json.dump(all_normalized_articles, f, indent=4, ensure_ascii=False)
-    print(f"\n[Exito] Se guardaron {len(all_normalized_articles)} articulos unificados en {json_output_path}")
+    logger.info(
+        "[Éxito] Se guardaron %d artículos unificados en %s",
+        len(all_normalized_articles), json_output_path,
+    )
 
-    plots = generate_all_plots(all_normalized_articles, pdf_dir="plots_output")
+    plots = generate_all_plots(all_normalized_articles, pdf_dir=str(PROJECT_ROOT / "plots_output"))
 
     html_content = generate_dashboard(all_normalized_articles, plots=plots)
-    html_output_path = "dashboard.html"
+    html_output_path = PROJECT_ROOT / "dashboard.html"
     with open(html_output_path, "w", encoding="utf-8") as f:
         f.write(html_content)
-    print(f"[Exito] Dashboard interactivo generado en {html_output_path}")
-    print(f"[Exito] PDFs de graficas guardados en ./plots_output/")
+    logger.info("[Éxito] Dashboard interactivo generado en %s", html_output_path)
+    logger.info("[Éxito] PDFs de gráficas guardados en ./plots_output/")
 
-    export_csv(all_normalized_articles)
-    export_bibtex(all_normalized_articles)
+    export_csv(all_normalized_articles, filepath=str(PROJECT_ROOT / "consolidated_results.csv"))
+    export_bibtex(all_normalized_articles, filepath=str(PROJECT_ROOT / "consolidated_results.bib"))
 
-    webbrowser.open(html_output_path)
-    print("\nProceso finalizado con exito!")
+    # TODO: Habilitar cuando el downloader esté listo para producción
+    # logger.info("[Pipeline] Descargando PDFs de acceso abierto...")
+    # downloader = ArticleDownloader(download_dir=PROJECT_ROOT / "downloads")
+    # download_results = downloader.download_batch(all_normalized_articles)
+    # ok = sum(1 for r in download_results if r.success)
+    # fail = sum(1 for r in download_results if not r.success)
+    # logger.info("[Pipeline] Descargas: %d exitosas, %d fallidas", ok, fail)
+
+    webbrowser.open(str(html_output_path))
+    logger.info("Proceso finalizado con éxito!")

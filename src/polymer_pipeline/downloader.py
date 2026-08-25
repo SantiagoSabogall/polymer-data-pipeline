@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,12 +22,15 @@ import requests
 
 from polymer_pipeline.http import make_session
 
-DOWNLOAD_DIR = Path("downloads")
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DOWNLOAD_DIR = PROJECT_ROOT / "downloads"
 MANIFEST_PATH = DOWNLOAD_DIR / "manifest.json"
 PDF_MAGIC = b"%PDF"
 MAX_FILENAME_LENGTH = 120
 CHUNK_SIZE = 8192
-DEFAULT_TIMEOUT = (10, 60)
+DEFAULT_TIMEOUT: tuple[int, int] = (10, 60)
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 DEFAULT_RATE_LIMIT = 0.5
@@ -58,18 +63,17 @@ class DownloadRateLimiter:
         self._default = default
         self._last_request: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
 
     def wait_if_needed(self, url: str) -> None:
         domain = urlparse(url).netloc
         min_interval = self._limits.get(domain, self._default)
-        with self._lock:
+        with self._cond:
             last = self._last_request.get(domain, 0.0)
             elapsed = time.monotonic() - last
             if elapsed < min_interval:
                 wait_time = min_interval - elapsed
-                self._lock.release()
-                time.sleep(wait_time)
-                self._lock.acquire()
+                self._cond.wait(wait_time)
             self._last_request[domain] = time.monotonic()
 
 
@@ -144,6 +148,7 @@ class ArticleDownloader:
         doi: str = "",
         title: str = "",
         max_retries: int = 2,
+        _depth: int = 0,
     ) -> DownloadResult:
         result = DownloadResult(doi=doi, title=title, pdf_url=url)
 
@@ -172,7 +177,7 @@ class ArticleDownloader:
 
                 if resp.status_code == 429:
                     retry_after = int(resp.headers.get("Retry-After", 5))
-                    last_error = f"429 Too Many Requests"
+                    last_error = "429 Too Many Requests"
                     if attempt < max_retries:
                         time.sleep(retry_after)
                         continue
@@ -209,11 +214,12 @@ class ArticleDownloader:
                     break
 
                 if not is_valid_pdf(buffer):
-                    if b"<html" in buffer[:2048].lower():
+                    if _depth < 3 and b"<html" in buffer[:2048].lower():
                         extracted = self._extract_pdf_link_from_html(buffer)
                         if extracted and extracted != url:
                             return self.download_pdf(extracted, doi, title,
-                                                     max_retries=max_retries - attempt)
+                                                     max_retries=max_retries - attempt,
+                                                     _depth=_depth + 1)
                     last_error = "Not a valid PDF"
                     break
 
@@ -270,17 +276,15 @@ class ArticleDownloader:
 
     def download_batch(self, articles: list[dict],
                        max_workers: int = 3) -> list[DownloadResult]:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         results: list[DownloadResult] = []
         downloadable = [art for art in articles if art.get("pdf_url")]
         total = len(downloadable)
 
         if total == 0:
-            print("[Downloader] No articles with PDF URLs to download.")
+            logger.info("[Downloader] No hay artículos con URLs de PDF para descargar.")
             return results
 
-        print(f"[Downloader] Starting download of {total} PDFs...")
+        logger.info("[Downloader] Iniciando descarga de %d PDFs...", total)
         success_count = 0
         fail_count = 0
 
@@ -312,7 +316,9 @@ class ArticleDownloader:
                     fail_count += 1
                 done = success_count + fail_count
                 if done % 50 == 0 or done == total:
-                    print(f"  [Downloader] {done}/{total} ({success_count} OK, {fail_count} failed)")
+                    logger.info("  [Downloader] %d/%d (%d OK, %d fallidos)",
+                                done, total, success_count, fail_count)
 
-        print(f"[Downloader] Complete: {success_count} downloaded, {fail_count} failed")
+        logger.info("[Downloader] Completo: %d descargados, %d fallidos",
+                     success_count, fail_count)
         return results

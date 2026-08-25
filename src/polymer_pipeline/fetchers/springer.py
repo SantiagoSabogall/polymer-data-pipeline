@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import logging
+
 from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, SPRINGER_API_KEY,
@@ -6,23 +10,25 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_springer_query
 from polymer_pipeline.http import PageFetcher, make_session
 
+logger = logging.getLogger(__name__)
+
 URL = "https://api.springernature.com/meta/v2/json"
 
 
-def fetch_springer(query):
+def fetch_springer(query: str) -> list[dict]:
     cache_key = f"Springer:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
-        print(f"[Springer] Usando cache para: {query[:60]}...")
+        logger.info("[Springer] Usando cache para: %s...", query[:60])
         return cached
 
     if not SPRINGER_API_KEY:
-        print("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
+        logger.warning("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
 
     translated = build_springer_query(query)
 
-    def build_params(start):
+    def build_params(start: int) -> dict:
         return {
             "q": translated,
             "p": BATCH_SIZE,
@@ -30,7 +36,7 @@ def fetch_springer(query):
             "api_key": SPRINGER_API_KEY,
         }
 
-    def extract_items(data):
+    def extract_items(data: dict) -> list[dict]:
         records = data.get("records", [])
         normalized = []
         for record in records:
@@ -64,7 +70,7 @@ def fetch_springer(query):
             })
         return normalized
 
-    def extract_total(data):
+    def extract_total(data: dict) -> int:
         result_info = data.get("result", [{}])
         return int(result_info[0].get("total", 0)) if result_info else 0
 

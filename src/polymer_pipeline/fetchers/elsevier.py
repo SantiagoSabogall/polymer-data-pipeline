@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import logging
+
 from polymer_pipeline.settings import (
     BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, ELSEVIER_API_KEY,
@@ -6,6 +10,8 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.http import PageFetcher, make_session
 
+logger = logging.getLogger(__name__)
+
 URL = "https://api.elsevier.com/content/search/scopus"
 HEADERS = {
     "X-ELS-APIKey": ELSEVIER_API_KEY,
@@ -13,27 +19,27 @@ HEADERS = {
 }
 
 
-def fetch_elsevier(query):
+def fetch_elsevier(query: str) -> list[dict]:
     cache_key = f"Elsevier:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
-        print(f"[Elsevier] Usando cache para: {query[:60]}...")
+        logger.info("[Elsevier] Usando cache para: %s...", query[:60])
         return cached
 
     if not ELSEVIER_API_KEY:
-        print("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
+        logger.warning("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
 
     translated = build_elsevier_query(query)
 
-    def build_params(start):
+    def build_params(start: int) -> dict:
         return {
             "query": translated,
             "count": BATCH_SIZE,
             "start": start,
         }
 
-    def extract_items(data):
+    def extract_items(data: dict) -> list[dict]:
         entries = data.get("search-results", {}).get("entry", [])
         if not entries or "error" in entries[0]:
             return []
@@ -64,7 +70,7 @@ def fetch_elsevier(query):
             })
         return normalized
 
-    def extract_total(data):
+    def extract_total(data: dict) -> int:
         return int(data.get("search-results", {}).get("opensearch:totalResults", 0))
 
     fetcher = PageFetcher(

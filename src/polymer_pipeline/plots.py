@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import json
 import base64
 import io
+import logging
 from collections import Counter
 from pathlib import Path
 
@@ -11,7 +14,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-PALETTE = {
+from polymer_pipeline.sources import SOURCE_COLORS
+
+logger = logging.getLogger(__name__)
+
+PALETTE: dict[str, str] = {
     "bg":      "#0f172a",
     "card":    "#1e293b",
     "text":    "#f8fafc",
@@ -23,8 +30,14 @@ PALETTE = {
     "amber":   "#fbbf24",
 }
 
+STOP_WORDS: set[str] = {
+    "and", "of", "the", "for", "a", "toward", "with", "from",
+    "on", "in", "to", "as", "by", "an", "its", "via", "based",
+    "using", "at", "their", "are", "is", "be",
+}
 
-def _apply_dark_style(fig, ax):
+
+def _apply_dark_style(fig: plt.Figure, ax: plt.Axes) -> None:
     fig.patch.set_facecolor(PALETTE["bg"])
     ax.set_facecolor(PALETTE["card"])
     ax.tick_params(colors=PALETTE["muted"], labelsize=9)
@@ -36,7 +49,7 @@ def _apply_dark_style(fig, ax):
     ax.grid(True, linestyle="--", alpha=0.25, color=PALETTE["muted"])
 
 
-def _fig_to_base64(fig) -> str:
+def _fig_to_base64(fig: plt.Figure) -> str:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", dpi=150,
                 facecolor=fig.get_facecolor())
@@ -46,7 +59,7 @@ def _fig_to_base64(fig) -> str:
     return encoded
 
 
-def _save_pdf(fig, path: str):
+def _save_pdf(fig: plt.Figure, path: str) -> None:
     fig.savefig(path, format="pdf", bbox_inches="tight",
                 facecolor=fig.get_facecolor())
 
@@ -68,7 +81,7 @@ def plot_publications_by_year(df: pd.DataFrame, pdf_dir: str = ".") -> str:
 
     pdf_path = Path(pdf_dir) / "plot_year.pdf"
     _save_pdf(fig, str(pdf_path))
-    print(f"  [Plots] PDF guardado: {pdf_path}")
+    logger.info("  [Plots] PDF guardado: %s", pdf_path)
 
     b64 = _fig_to_base64(fig)
     return b64
@@ -96,23 +109,14 @@ def plot_top_journals(df: pd.DataFrame, pdf_dir: str = ".", top_n: int = 10) -> 
 
     pdf_path = Path(pdf_dir) / "plot_journals.pdf"
     _save_pdf(fig, str(pdf_path))
-    print(f"  [Plots] PDF guardado: {pdf_path}")
+    logger.info("  [Plots] PDF guardado: %s", pdf_path)
 
     b64 = _fig_to_base64(fig)
     return b64
 
 
-from polymer_pipeline.sources import SOURCE_COLORS
-
-STOP_WORDS = {
-    "and", "of", "the", "for", "a", "toward", "with", "from",
-    "on", "in", "to", "as", "by", "an", "its", "via", "based",
-    "using", "at", "their", "are", "is", "be",
-}
-
-
-def plot_top_keywords(data: list, pdf_dir: str = ".", top_n: int = 10) -> str:
-    all_words = []
+def plot_top_keywords(data: list[dict], pdf_dir: str = ".", top_n: int = 10) -> str:
+    all_words: list[str] = []
     for item in data:
         words = (item.get("title", "").lower()
                  .replace("/", " ").replace("(", " ").replace(")", " ").split())
@@ -140,7 +144,7 @@ def plot_top_keywords(data: list, pdf_dir: str = ".", top_n: int = 10) -> str:
 
     pdf_path = Path(pdf_dir) / "plot_keywords.pdf"
     _save_pdf(fig, str(pdf_path))
-    print(f"  [Plots] PDF guardado: {pdf_path}")
+    logger.info("  [Plots] PDF guardado: %s", pdf_path)
 
     b64 = _fig_to_base64(fig)
     return b64
@@ -171,24 +175,24 @@ def plot_source_distribution(df: pd.DataFrame, pdf_dir: str = ".") -> str:
 
     pdf_path = Path(pdf_dir) / "plot_sources.pdf"
     _save_pdf(fig, str(pdf_path))
-    print(f"  [Plots] PDF guardado: {pdf_path}")
+    logger.info("  [Plots] PDF guardado: %s", pdf_path)
 
     b64 = _fig_to_base64(fig)
     return b64
 
 
-def generate_all_plots(data: list, pdf_dir: str = ".") -> dict:
+def generate_all_plots(data: list[dict], pdf_dir: str = ".") -> dict[str, str]:
     Path(pdf_dir).mkdir(parents=True, exist_ok=True)
     df = pd.json_normalize(data)
 
-    print("[Plots] Generando graficas...")
+    logger.info("[Plots] Generando gráficas...")
     plots = {
         "year":     plot_publications_by_year(df, pdf_dir),
         "journals": plot_top_journals(df, pdf_dir),
         "keywords": plot_top_keywords(data, pdf_dir),
         "sources":  plot_source_distribution(df, pdf_dir),
     }
-    print("[Plots] Todas las graficas generadas!")
+    logger.info("[Plots] Todas las gráficas generadas!")
     return plots
 
 
@@ -196,4 +200,4 @@ if __name__ == "__main__":
     with open("consolidated_results.json", "r", encoding="utf-8") as f:
         datos = json.load(f)
     generate_all_plots(datos, pdf_dir="plots_output")
-    print("PDFs guardados en ./plots_output/")
+    logger.info("PDFs guardados en ./plots_output/")

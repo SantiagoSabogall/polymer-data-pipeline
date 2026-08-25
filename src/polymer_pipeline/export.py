@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import csv
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def export_csv(articles, filepath="consolidated_results.csv"):
+def export_csv(articles: list[dict], filepath: str = "consolidated_results.csv") -> None:
     if not articles:
-        print("[Export] No articles to export.")
+        logger.warning("[Export] No hay artículos para exportar a CSV.")
         return
     fieldnames = ["level", "title", "author", "journal", "year", "doi", "source", "pdf_url"]
     with open(filepath, "w", newline="", encoding="utf-8") as f:
@@ -11,12 +16,12 @@ def export_csv(articles, filepath="consolidated_results.csv"):
         writer.writeheader()
         for art in articles:
             writer.writerow({k: art.get(k, "") for k in fieldnames})
-    print(f"[Export] CSV guardado en {filepath}")
+    logger.info("[Export] CSV guardado en %s", filepath)
 
 
-def export_bibtex(articles, filepath="consolidated_results.bib"):
+def export_bibtex(articles: list[dict], filepath: str = "consolidated_results.bib") -> None:
     if not articles:
-        print("[Export] No articles to export.")
+        logger.warning("[Export] No hay artículos para exportar a BibTeX.")
         return
     with open(filepath, "w", encoding="utf-8") as f:
         for i, art in enumerate(articles):
@@ -35,10 +40,10 @@ def export_bibtex(articles, filepath="consolidated_results.bib"):
             f.write(f"  doi = {{{doi}}},\n")
             f.write(f"  source = {{{art.get('source', '')}}}\n")
             f.write("}\n\n")
-    print(f"[Export] BibTeX guardado en {filepath}")
+    logger.info("[Export] BibTeX guardado en %s", filepath)
 
 
-def _sanitize_bibtex(text):
+def _sanitize_bibtex(text: str) -> str:
     text = text.replace("{", "\\{").replace("}", "\\}")
     text = text.replace("&", "\\&")
     return text

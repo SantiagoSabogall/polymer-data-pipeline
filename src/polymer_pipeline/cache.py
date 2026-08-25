@@ -1,11 +1,17 @@
+from __future__ import annotations
+
 import json
 import hashlib
+import logging
 import time
 from pathlib import Path
 
 from polymer_pipeline.settings import CACHE_TTL
 
-CACHE_DIR = Path(".cache")
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CACHE_DIR = PROJECT_ROOT / ".cache"
 
 
 def _key_to_path(key: str) -> Path:
@@ -34,9 +40,11 @@ def set_cache(key: str, data: list) -> None:
     path = _key_to_path(key)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(entry, f, ensure_ascii=False)
+    logger.debug("Cache guardado: %s", key[:40])
 
 
 def clear_cache() -> None:
     if CACHE_DIR.exists():
         for f in CACHE_DIR.iterdir():
             f.unlink(missing_ok=True)
+        logger.info("Cache limpiado: %s", CACHE_DIR)

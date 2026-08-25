@@ -78,14 +78,6 @@ BLEND_TERMS = [
     "copolyester",
 ]
 
-PHYS_TERMS = [
-    "astro",
-    "astrophyisical",
-    "stars",
-    "black hole",
-    "galaxy",
-    "python"
-]
 
 def _term_for_query(term: str) -> str:
     """Expresa un término limpio dentro de un fragmento booleano genérico.

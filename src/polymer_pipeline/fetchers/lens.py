@@ -5,11 +5,17 @@ API gratuita para uso académico. Requiere API key (registro gratis
 con justificación de uso).
 """
 
+from __future__ import annotations
+
+import logging
 import time
+
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.settings import LENS_API_KEY
 from polymer_pipeline.query_builder import build_lens_query
 from polymer_pipeline.http import make_session
+
+logger = logging.getLogger(__name__)
 
 LENS_API_URL = "https://api.lens.org/scholarly/search"
 
@@ -17,7 +23,7 @@ LENS_API_URL = "https://api.lens.org/scholarly/search"
 LENS_MAX_SIZE = 1000
 
 
-def fetch_lens(query: str, max_results: int = 100) -> list:
+def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
     """Obtiene artículos de Lens.org con vinculación papers-patentes.
 
     Args:
@@ -27,11 +33,11 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
     cache_key = f"Lens:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
-        print(f"[Lens] Usando cache para: {query[:60]}...")
+        logger.info("[Lens] Usando cache para: %s...", query[:60])
         return cached
 
     if not LENS_API_KEY:
-        print("[Lens] Saltando: No se configuró LENS_API_KEY en API_KEY.env")
+        logger.warning("[Lens] Saltando: No se configuró LENS_API_KEY en API_KEY.env")
         return []
 
     translated = build_lens_query(query)
@@ -56,7 +62,7 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
         ]
     }
 
-    normalized = []
+    normalized: list[dict] = []
     retries = 0
     max_retries = 3
 
@@ -73,17 +79,18 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
                 if resp.status_code == 429:
                     retries += 1
                     if retries > max_retries:
-                        print("[Lens] Reintentos agotados. Abortando.")
+                        logger.warning("[Lens] Reintentos agotados. Abortando.")
                         break
                     retry_after = int(resp.headers.get("x-rate-limit-retry-after-seconds", 10))
-                    print(f"[Lens] 429. Esperando {retry_after}s (intento {retries}/{max_retries}).")
+                    logger.info("[Lens] 429. Esperando %ds (intento %d/%d).",
+                                retry_after, retries, max_retries)
                     time.sleep(retry_after)
                     continue
 
                 retries = 0
 
                 if resp.status_code != 200:
-                    print(f"[Lens] Error {resp.status_code}: {resp.text[:200]!r}")
+                    logger.error("[Lens] Error %d: %r", resp.status_code, resp.text[:200])
                     break
 
                 data = resp.json()
@@ -164,10 +171,10 @@ def fetch_lens(query: str, max_results: int = 100) -> list:
                 break
 
             except Exception as e:
-                print(f"[Lens] Excepción: {type(e).__name__}: {e}")
+                logger.error("[Lens] Excepción: %s: %s", type(e).__name__, e)
                 break
 
-    print(f"[Lens] {len(normalized)} resultados para: {query[:60]}...")
+    logger.info("[Lens] %d resultados para: %s...", len(normalized), query[:60])
 
     if normalized:
         set_cache(cache_key, normalized)

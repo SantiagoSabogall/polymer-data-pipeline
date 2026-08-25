@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from polymer_pipeline.dict import (
     LEVEL_FILTER_RULES,
@@ -16,7 +18,7 @@ _FALLBACK_PROPERTY = BARRIER_TERMS + BLEND_TERMS + ADDITIVE_TERMS
 _CASE_SENSITIVE_TERMS = {"PET"}
 
 
-def _compile_term(term: str) -> re.Pattern:
+def _compile_term(term: str) -> re.Pattern[str]:
     is_wildcard = term.endswith("*")
     if is_wildcard:
         base = term[:-1]
@@ -32,23 +34,25 @@ def _compile_term(term: str) -> re.Pattern:
 
 
 # Patrones precompilados una sola vez (los términos no cambian en runtime).
-_TERM_PATTERNS = {term: _compile_term(term) for term in {
-    *_FALLBACK_MATERIAL,
-    *_FALLBACK_PROPERTY,
-    *POLYESTER_TERMS,
-    *BIOPOLYMER_TERMS,
-    *PACKAGING_TERMS,
-    *BARRIER_TERMS,
-    *BLEND_TERMS,
-    *ADDITIVE_TERMS,
-}}
+_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
+    term: _compile_term(term) for term in {
+        *_FALLBACK_MATERIAL,
+        *_FALLBACK_PROPERTY,
+        *POLYESTER_TERMS,
+        *BIOPOLYMER_TERMS,
+        *PACKAGING_TERMS,
+        *BARRIER_TERMS,
+        *BLEND_TERMS,
+        *ADDITIVE_TERMS,
+    }
+}
 
 
-def _term_pattern(term: str) -> re.Pattern:
+def _term_pattern(term: str) -> re.Pattern[str]:
     return _TERM_PATTERNS.get(term) or _compile_term(term)
 
 
-def contains_any_term(text, terms):
+def contains_any_term(text: str | None, terms: list[str]) -> bool:
     if not text:
         return False
     for term in terms:
@@ -57,7 +61,7 @@ def contains_any_term(text, terms):
     return False
 
 
-def passes_filter(article, level):
+def passes_filter(article: dict, level: str) -> bool:
     title = article.get("title", "")
     if not title or title == "Sin título":
         return False

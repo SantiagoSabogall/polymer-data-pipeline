@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import logging
+import re
+
 from polymer_pipeline.settings import (
     TOTAL_RESULTS_PER_QUERY,
     SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
@@ -5,7 +10,8 @@ from polymer_pipeline.settings import (
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.http import PageFetcher, make_session
-import re
+
+logger = logging.getLogger(__name__)
 
 URL = "https://api.crossref.org/works"
 
@@ -21,11 +27,11 @@ def _strip_jats_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def fetch_crossref(query):
+def fetch_crossref(query: str) -> list[dict]:
     cache_key = f"Crossref:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
-        print(f"[Crossref] Usando cache para: {query[:60]}...")
+        logger.info("[Crossref] Usando cache para: %s...", query[:60])
         return cached
 
     translated = build_crossref_query(query)
@@ -33,14 +39,14 @@ def fetch_crossref(query):
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
     }
 
-    def build_params(start):
+    def build_params(start: int) -> dict:
         return {
             "query": translated,
             "rows": CROSSREF_BATCH_SIZE,
             "offset": start,
         }
 
-    def extract_items(data):
+    def extract_items(data: dict) -> list[dict]:
         items = data.get("message", {}).get("items", [])
         normalized = []
         for item in items:
@@ -82,7 +88,7 @@ def fetch_crossref(query):
             })
         return normalized
 
-    def extract_total(data):
+    def extract_total(data: dict) -> int:
         return data.get("message", {}).get("total-results", 0)
 
     fetcher = PageFetcher(

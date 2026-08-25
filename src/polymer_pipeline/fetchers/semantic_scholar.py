@@ -12,6 +12,9 @@ TLDR summaries y campos de estudio. Con API key gratuita el límite es
 - Respeta ``Retry-After`` y aplica backoff exponencial ante 429.
 """
 
+from __future__ import annotations
+
+import logging
 import threading
 import time
 
@@ -19,6 +22,8 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_semanticscholar_query
 from polymer_pipeline.http import make_session
 from polymer_pipeline.settings import SEMANTIC_SCHOLAR_API_KEY
+
+logger = logging.getLogger(__name__)
 
 SEMANTIC_SCHOLAR_BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 MAX_RETRIES = 5
@@ -59,7 +64,7 @@ def _normalize_paper(paper: dict) -> dict:
     }
 
 
-def fetch_semantic_scholar(query: str, max_results: int = 100) -> list:
+def fetch_semantic_scholar(query: str, max_results: int = 100) -> list[dict]:
     """Obtiene artículos de Semantic Scholar vía búsqueda masiva (bulk).
 
     Args:
@@ -69,12 +74,12 @@ def fetch_semantic_scholar(query: str, max_results: int = 100) -> list:
     cache_key = f"SemanticScholar:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
-        print(f"[SemanticScholar] Usando cache para: {query[:60]}...")
+        logger.info("[SemanticScholar] Usando cache para: %s...", query[:60])
         return cached
 
     translated = build_semanticscholar_query(query)
 
-    normalized: list = []
+    normalized: list[dict] = []
     token: str | None = None
     retries = 0
 
@@ -99,17 +104,18 @@ def fetch_semantic_scholar(query: str, max_results: int = 100) -> list:
                 if resp.status_code == 429:
                     retries += 1
                     if retries > MAX_RETRIES:
-                        print("[SemanticScholar] Reintentos agotados. Abortando.")
+                        logger.warning("[SemanticScholar] Reintentos agotados. Abortando.")
                         break
                     wait = min(2 ** retries, 60)
-                    print(f"[SemanticScholar] 429. Esperando {wait}s (intento {retries}/{MAX_RETRIES}).")
+                    logger.info("[SemanticScholar] 429. Esperando %ds (intento %d/%d).",
+                                wait, retries, MAX_RETRIES)
                     time.sleep(wait)
                     continue
 
                 retries = 0
 
                 if resp.status_code != 200:
-                    print(f"[SemanticScholar] Error {resp.status_code}: {resp.text[:200]!r}")
+                    logger.error("[SemanticScholar] Error %d: %r", resp.status_code, resp.text[:200])
                     break
 
                 data = resp.json()
@@ -121,11 +127,11 @@ def fetch_semantic_scholar(query: str, max_results: int = 100) -> list:
                     break
 
             except Exception as e:
-                print(f"[SemanticScholar] Excepción: {type(e).__name__}: {e}")
+                logger.error("[SemanticScholar] Excepción: %s: %s", type(e).__name__, e)
                 break
 
     normalized = normalized[:max_results]
-    print(f"[SemanticScholar] {len(normalized)} resultados para: {query[:60]}...")
+    logger.info("[SemanticScholar] %d resultados para: %s...", len(normalized), query[:60])
 
     if normalized:
         set_cache(cache_key, normalized)
