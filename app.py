@@ -404,7 +404,7 @@ if not display_df.empty:
     display_cols = ["level", "title", "author", "journal", "year", "source", "doi"]
     display_df = display_df[[c for c in display_cols if c in display_df.columns]]
 
-    st.dataframe(
+    event = st.dataframe(
         display_df,
         use_container_width=True,
         column_config={
@@ -412,10 +412,87 @@ if not display_df.empty:
             "title": st.column_config.TextColumn("Título", width="large"),
             "doi": st.column_config.LinkColumn("DOI", display_text="🔗"),
         },
-        height=500,
+        height=400,
+        selection_mode="single-row",
+        on_select="rerun",
+        key="results_table",
     )
 
+    # ── Detalle del artículo seleccionado ────────────────────────────────
+    if event.selection and event.selection.rows:
+        selected_idx = event.selection.rows[0]
+        article = filtered[selected_idx]
+
+        st.divider()
+        st.subheader("📄 Detalle del artículo")
+
+        # Card de información
+        col_main, col_side = st.columns([3, 1])
+
+        with col_main:
+            st.markdown(f"### {article.get('title', 'Sin título')}")
+
+            info_cols = st.columns(3)
+            with info_cols[0]:
+                st.markdown(f"**Autor:** {article.get('author', 'Desconocido')}")
+                st.markdown(f"**Año:** {article.get('year', 'N/A')}")
+            with info_cols[1]:
+                st.markdown(f"**Revista:** {article.get('journal', 'No disponible')}")
+                st.markdown(f"**Fuente:** {article.get('source', 'N/A')}")
+            with info_cols[2]:
+                st.markdown(f"**Nivel:** {article.get('level', 'N/A')}")
+
+            # Abstract
+            abstract = article.get("abstract", "")
+            if abstract:
+                with st.expander("📝 Abstract", expanded=True):
+                    st.markdown(abstract)
+            else:
+                st.info("No hay abstract disponible para este artículo.")
+
+        with col_side:
+            # Acciones
+            st.markdown("### 🔗 Enlaces")
+
+            # DOI
+            doi = article.get("doi", "")
+            if doi:
+                st.link_button(
+                    "🔗 Abrir DOI",
+                    url=f"https://doi.org/{doi}",
+                    use_container_width=True,
+                )
+
+            # PDF
+            pdf_url = article.get("pdf_url", "")
+            if pdf_url:
+                st.link_button(
+                    "📄 Descargar PDF",
+                    url=pdf_url,
+                    use_container_width=True,
+                )
+            else:
+                st.button("📄 Sin PDF disponible", disabled=True, use_container_width=True)
+
+            # Scholar
+            if doi:
+                st.link_button(
+                    "🎓 Google Scholar",
+                    url=f"https://scholar.google.com/scholar?q={doi}",
+                    use_container_width=True,
+                )
+
+            # Semantic Scholar
+            if article.get("title"):
+                from urllib.parse import quote
+                st.link_button(
+                    "🧠 Semantic Scholar",
+                    url=f"https://www.semanticscholar.org/search?q={quote(article['title'])}",
+                    use_container_width=True,
+                )
+
     # Export
+    st.divider()
     st.subheader("📥 Exportar")
     col_exp1, col_exp2, col_exp3 = st.columns(3)
     with col_exp1:
