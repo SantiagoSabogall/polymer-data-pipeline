@@ -24,13 +24,32 @@ logging.basicConfig(
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from polymer_pipeline.settings import load_settings
-from polymer_pipeline.dict import LEVELS, SEARCH_QUERIES
+from polymer_pipeline.dict import LEVELS, SEARCH_QUERIES, build_boolean_query
 from polymer_pipeline.sources import SOURCES, SOURCE_NAMES
 from polymer_pipeline.core import run_pipeline, filter_articles, compute_quality_metrics
 from polymer_pipeline.plots_interactive import generate_interactive_plots
 from polymer_pipeline.export import export_csv, export_bibtex
 
 load_settings()
+
+# ── Persistencia de presets ────────────────────────────────────────────
+PRESETS_DIR = Path.home() / ".polymer-pipeline"
+PRESETS_FILE = PRESETS_DIR / "searches.json"
+
+
+def _load_presets() -> dict:
+    if PRESETS_FILE.exists():
+        try:
+            return json.loads(PRESETS_FILE.read_text("utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_presets(presets: dict) -> None:
+    PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+    PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False), encoding="utf-8")
+
 
 # ── Page config ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -44,50 +63,197 @@ st.set_page_config(
 with st.sidebar:
     st.header("⚙️ Configuración del Pipeline")
 
-    # Modo de búsqueda
+    # ── Gestión de presets guardados ────────────────────────────────────
+    saved_presets = _load_presets()
+    if saved_presets:
+        st.subheader("💾 Búsquedas guardadas")
+        preset_names = list(saved_presets.keys())
+        selected_preset = st.selectbox("Cargar:", ["(nueva búsqueda)"] + preset_names)
+    else:
+        selected_preset = "(nueva búsqueda)"
+
+    st.divider()
+
+    # ── Modo de búsqueda ────────────────────────────────────────────────
     st.subheader("🔍 Modo de búsqueda")
     search_mode = st.radio(
-        "Seleccionar modo:",
-        ["📋 Presets (niveles)", "📝 Búsqueda libre"],
+        "Seleccionar:",
+        ["📋 Presets (L1-L4)", "📝 Búsqueda libre", "🔧 Constructor visual"],
         label_visibility="collapsed",
+        key="search_mode",
     )
 
-    # Configuración según modo
-    if search_mode == "📋 Presets (niveles)":
+    # ── Estado inicial desde preset guardado ────────────────────────────
+    preset_data = saved_presets.get(selected_preset, {}) if selected_preset != "(nueva búsqueda)" else {}
+
+    # ── MODO 1: Presets ─────────────────────────────────────────────────
+    if search_mode == "📋 Presets (L1-L4)":
         st.subheader("Niveles de búsqueda")
+        default_levels = preset_data.get("levels", [l["key"] for l in LEVELS])
         selected_levels = []
         for level in LEVELS:
-            if st.checkbox(f"{level['label']} ({level['key']})", value=True, key=f"lvl_{level['key']}"):
-                selected_levels.append(level['key'])
+            if st.checkbox(
+                f"{level['label']} ({level['key']})",
+                value=level["key"] in default_levels,
+                key=f"lvl_{level['key']}",
+            ):
+                selected_levels.append(level["key"])
 
         raw_query = None
-        custom_filter_groups = None
-    else:
-        st.subheader("Búsqueda personalizada")
+        builder_groups = None
+        bool_operator = "AND"
+
+    # ── MODO 2: Búsqueda libre ──────────────────────────────────────────
+    elif search_mode == "📝 Búsqueda libre":
+        st.subheader("Query booleana")
+        default_query = preset_data.get(
+            "query",
+            '(polyester OR PET) AND (barrier OR permeability)',
+        )
         raw_query = st.text_area(
-            "Query booleana:",
-            value='(polyester OR PET) AND (barrier OR permeability)',
-            height=100,
+            "Escribe tu consulta:",
+            value=default_query,
+            height=120,
+            help="Formato: (término1 OR término2) AND (término3 OR término4)",
+        )
+
+        # Opcional: reglas de filtro
+        st.caption("Reglas de filtro (opcional, separa términos con coma)")
+        filter_input = st.text_input(
+            "Filtrar títulos que contengan:",
+            value=preset_data.get("filter_text", ""),
+            placeholder="polyester, barrier, film",
         )
         custom_filter_groups = None
+        if filter_input:
+            terms = [t.strip() for t in filter_input.split(",") if t.strip()]
+            if terms:
+                custom_filter_groups = [terms]
+
+        selected_levels = None
+        builder_groups = None
+        bool_operator = "AND"
+
+    # ── MODO 3: Constructor visual ──────────────────────────────────────
+    else:
+        st.subheader("🔧 Constructor de consulta")
+
+        # Cargar grupos desde preset o usar defaults
+        default_groups = preset_data.get("groups", [
+            {"name": "Grupo 1", "terms": ["polyester", "PET"]},
+            {"name": "Grupo 2", "terms": ["barrier", "permeability"]},
+        ])
+        default_operator = preset_data.get("bool_operator", "AND")
+
+        # Editor de grupos
+        if "builder_groups" not in st.session_state:
+            st.session_state["builder_groups"] = default_groups
+
+        groups = st.session_state["builder_groups"]
+
+        # Operador booleano
+        bool_operator = st.radio(
+            "Combinar grupos con:",
+            ["AND", "OR"],
+            index=0 if default_operator == "AND" else 1,
+            horizontal=True,
+        )
+
+        # Renderizar cada grupo
+        new_groups = []
+        for i, group in enumerate(groups):
+            with st.expander(f"Grupo {i+1}: {group['name']}", expanded=True):
+                name = st.text_input("Nombre:", value=group["name"], key=f"gname_{i}")
+                terms_str = st.text_area(
+                    "Términos (uno por línea):",
+                    value="\n".join(group["terms"]),
+                    height=80,
+                    key=f"gterms_{i}",
+                )
+                terms = [t.strip() for t in terms_str.split("\n") if t.strip()]
+
+                col_del, _ = st.columns([1, 4])
+                with col_del:
+                    if st.button("🗑️", key=f"del_{i}"):
+                        pass  # Se elimina abajo
+                    else:
+                        new_groups.append({"name": name, "terms": terms})
+
+        # Solo mantener los grupos que no fueron eliminados
+        groups = [g for g in new_groups if g["terms"]]
+
+        col_add, col_preview = st.columns([1, 2])
+        with col_add:
+            if st.button("➕ Agregar grupo"):
+                groups.append({"name": f"Grupo {len(groups)+1}", "terms": []})
+
+        # Preview de la query generada
+        if groups and all(g["terms"] for g in groups):
+            generated_query = build_boolean_query(groups, bool_operator)
+            with col_preview:
+                st.caption("Query generada:")
+                st.code(generated_query, language=None)
+
+        # Reglas de filtro
+        st.caption("Filtrar títulos que contengan al menos 2 de los grupos:")
+        use_filter = st.checkbox("Aplicar filtro de relevancia", value=True)
+
+        st.session_state["builder_groups"] = groups
+        raw_query = None
+        builder_groups = groups if all(g["terms"] for g in groups) else None
         selected_levels = None
 
-    # Fuentes
-    st.subheader("Fuentes (APIs)")
+    # ── Fuentes (común a todos los modos) ───────────────────────────────
+    st.divider()
+    st.subheader("🌐 Fuentes (APIs)")
+    default_sources = preset_data.get("sources", SOURCE_NAMES)
     selected_sources = []
     for source_name in SOURCES:
-        if st.checkbox(source_name, value=True, key=f"src_{source_name}"):
+        if st.checkbox(source_name, value=source_name in default_sources, key=f"src_{source_name}"):
             selected_sources.append(source_name)
 
-    # Parámetros
+    # ── Parámetros ──────────────────────────────────────────────────────
+    st.subheader("⚙️ Parámetros")
     max_results = st.slider(
-        "Resultados por query", min_value=50, max_value=1000, value=250, step=50,
+        "Resultados por query",
+        min_value=50, max_value=1000,
+        value=preset_data.get("max_results", 250),
+        step=50,
     )
 
-    # Botón de ejecución
+    # ── Guardar preset ──────────────────────────────────────────────────
+    st.divider()
+    with st.expander("💾 Guardar búsqueda actual"):
+        save_name = st.text_input("Nombre:", placeholder="mi_búsqueda")
+        if st.button("Guardar", use_container_width=True):
+            if save_name:
+                preset_config = {
+                    "mode": search_mode,
+                    "sources": selected_sources,
+                    "max_results": max_results,
+                }
+                if search_mode == "📋 Presets (L1-L4)":
+                    preset_config["levels"] = selected_levels
+                elif search_mode == "📝 Búsqueda libre":
+                    preset_config["query"] = raw_query or ""
+                    preset_config["filter_text"] = filter_input if 'filter_input' in dir() else ""
+                elif search_mode == "🔧 Constructor visual":
+                    preset_config["groups"] = groups if 'groups' in dir() else []
+                    preset_config["bool_operator"] = bool_operator
+
+                saved = _load_presets()
+                saved[save_name] = preset_config
+                _save_presets(saved)
+                st.success(f"✅ Guardado: {save_name}")
+                st.rerun()
+            else:
+                st.warning("Escribe un nombre")
+
+    # ── Botón de ejecución ──────────────────────────────────────────────
+    st.divider()
     run_clicked = st.button("🚀 Ejecutar Pipeline", type="primary", use_container_width=True)
 
-    # Filtros de visualización
+    # ── Filtros de visualización ────────────────────────────────────────
     st.divider()
     st.header("🔍 Filtros de visualización")
     search_filter = st.text_input("Buscar en resultados:", placeholder="título, autor, DOI...")
@@ -103,7 +269,7 @@ with st.sidebar:
 st.title("🧪 Polymer Data Pipeline")
 st.caption("Dashboard de artículos científicos consolidados y deduplicados")
 
-# Ejecutar pipeline
+# ── Ejecutar pipeline ──────────────────────────────────────────────────
 if run_clicked:
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -111,18 +277,59 @@ if run_clicked:
     def update_progress(current: int, total: int, source: str) -> None:
         progress_bar.progress(current / total, text=f"[{current}/{total}] {source}...")
 
+    # Determinar qué ejecutar según el modo
     if search_mode == "📝 Búsqueda libre" and raw_query:
-        from polymer_pipeline.dict import build_boolean_query
-        custom_groups = [{"name": "custom", "terms": raw_query.split(" OR ")}]
+        # Para búsqueda libre, usamos un nivel "custom" con la query del usuario
+        # Necesitamos inyectar la query en SEARCH_QUERIES temporalmente
+        import polymer_pipeline.dict as dict_mod
+        original_queries = dict_mod.SEARCH_QUERIES.copy()
+        original_rules = dict_mod.LEVEL_FILTER_RULES.copy()
+
+        dict_mod.SEARCH_QUERIES = {"custom": [raw_query]}
+        if custom_filter_groups:
+            dict_mod.LEVEL_FILTER_RULES = {"custom": custom_filter_groups}
+        else:
+            dict_mod.LEVEL_FILTER_RULES.pop("custom", None)
+
         articles = run_pipeline(
             levels=["custom"],
             sources=selected_sources,
             max_results=max_results,
             progress_callback=update_progress,
         )
-    else:
+
+        # Restaurar
+        dict_mod.SEARCH_QUERIES = original_queries
+        dict_mod.LEVEL_FILTER_RULES = original_rules
+
+    elif search_mode == "🔧 Constructor visual" and builder_groups:
+        # Constructor visual: generar query desde grupos
+        generated_query = build_boolean_query(builder_groups, bool_operator)
+
+        import polymer_pipeline.dict as dict_mod
+        original_queries = dict_mod.SEARCH_QUERIES.copy()
+        original_rules = dict_mod.LEVEL_FILTER_RULES.copy()
+
+        dict_mod.SEARCH_QUERIES = {"custom": [generated_query]}
+        if use_filter:
+            dict_mod.LEVEL_FILTER_RULES = {"custom": [g["terms"] for g in builder_groups]}
+        else:
+            dict_mod.LEVEL_FILTER_RULES.pop("custom", None)
+
         articles = run_pipeline(
-            levels=selected_levels or ["L1", "L2", "L3", "L4"],
+            levels=["custom"],
+            sources=selected_sources,
+            max_results=max_results,
+            progress_callback=update_progress,
+        )
+
+        dict_mod.SEARCH_QUERIES = original_queries
+        dict_mod.LEVEL_FILTER_RULES = original_rules
+
+    else:
+        # Modo presets
+        articles = run_pipeline(
+            levels=selected_levels or [l["key"] for l in LEVELS],
             sources=selected_sources,
             max_results=max_results,
             progress_callback=update_progress,
@@ -131,11 +338,10 @@ if run_clicked:
     progress_bar.empty()
     status_text.empty()
 
-    # Guardar en session_state
     st.session_state["articles"] = articles
     st.session_state["ran"] = True
 
-# Cargar artículos
+# ── Cargar artículos ───────────────────────────────────────────────────
 articles = st.session_state.get("articles", [])
 has_data = len(articles) > 0
 
@@ -143,7 +349,7 @@ if not has_data:
     st.info("👈 Configura los parámetros y haz clic en **Ejecutar Pipeline** para comenzar.")
     st.stop()
 
-# Aplicar filtros de visualización
+# ── Aplicar filtros de visualización ───────────────────────────────────
 filtered = filter_articles(
     articles,
     query=search_filter,
@@ -205,12 +411,12 @@ if not display_df.empty:
     col_exp1, col_exp2, col_exp3 = st.columns(3)
     with col_exp1:
         if st.button("📄 Exportar CSV"):
-            path = export_csv(filtered, filepath="/tmp/export.csv")
-            st.success(f"CSV exportado")
+            export_csv(filtered, filepath="/tmp/export.csv")
+            st.success("CSV exportado")
     with col_exp2:
         if st.button("📚 Exportar BibTeX"):
-            path = export_bibtex(filtered, filepath="/tmp/export.bib")
-            st.success(f"BibTeX exportado")
+            export_bibtex(filtered, filepath="/tmp/export.bib")
+            st.success("BibTeX exportado")
     with col_exp3:
         json_str = json.dumps(filtered, indent=2, ensure_ascii=False)
         st.download_button(
