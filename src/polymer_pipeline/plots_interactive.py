@@ -24,6 +24,10 @@ DARK_TEMPLATE = dict(
 
 
 def plot_publications_by_year(df: pd.DataFrame) -> go.Figure:
+    if "year" not in df.columns or df["year"].dropna().empty:
+        fig = go.Figure()
+        fig.update_layout(**DARK_TEMPLATE, title="Evolución de Publicaciones por Año (sin datos)")
+        return fig
     year = pd.to_numeric(df["year"], errors="coerce").dropna().astype(int)
     year_counts = year.value_counts().sort_index().reset_index()
     year_counts.columns = ["year", "count"]
@@ -39,6 +43,10 @@ def plot_publications_by_year(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_top_journals(df: pd.DataFrame, top_n: int = 10) -> go.Figure:
+    if "journal" not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(**DARK_TEMPLATE, title=f"Top {top_n} Revistas (sin datos)")
+        return fig
     journal = df["journal"].replace("No disponible", pd.NA).dropna()
     counts = journal.value_counts().head(top_n)
 
@@ -82,6 +90,10 @@ def plot_top_keywords(data: list[dict], top_n: int = 10) -> go.Figure:
 
 
 def plot_source_distribution(df: pd.DataFrame) -> go.Figure:
+    if "source" not in df.columns or df["source"].dropna().empty:
+        fig = go.Figure()
+        fig.update_layout(**DARK_TEMPLATE, title="Distribución por Fuente (sin datos)")
+        return fig
     counts = df["source"].value_counts()
     colors = [SOURCE_COLORS.get(s, "#fbbf24") for s in counts.index]
 
@@ -97,6 +109,10 @@ def plot_source_distribution(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_level_distribution(df: pd.DataFrame) -> go.Figure:
+    if "level" not in df.columns or df["level"].dropna().empty:
+        fig = go.Figure()
+        fig.update_layout(**DARK_TEMPLATE, title="Distribución por Nivel (sin datos)")
+        return fig
     level_labels = {
         "L1": "L1 Blends", "L2": "L2 Aditivos",
         "L3": "L3 Empaques", "L4": "L4 Biodegradables",

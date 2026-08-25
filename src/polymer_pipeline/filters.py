@@ -90,9 +90,11 @@ def passes_filter(
     if rules is None:
         rules = LEVEL_FILTER_RULES.get(level)
 
-    if rules:
+    if rules is not None:
+        if not rules:
+            return True  # Lista vacía = sin filtro de título
         matches = sum(1 for term_group in rules if contains_any_term(title, term_group))
         return matches >= 2
 
-    # Fallback genérico para niveles sin reglas definidas
+    # Fallback genérico para niveles sin reglas definidas (solo preset L1-L4)
     return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)

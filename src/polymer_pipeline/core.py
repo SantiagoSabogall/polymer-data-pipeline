@@ -169,6 +169,10 @@ def run_pipeline(
         filter_rules = custom_filter_rules
     else:
         filter_rules = {k: v for k, v in LEVEL_FILTER_RULES.items() if k in queries}
+        # Si algún nivel no tiene reglas, no filtrar por título (lista vacía = sin filtro)
+        for level in queries:
+            if level not in filter_rules:
+                filter_rules[level] = []
 
     # Construir tareas
     tasks: list[tuple] = []
