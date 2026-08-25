@@ -267,10 +267,11 @@ with st.sidebar:
     search_filter = st.text_input("Buscar en resultados:", placeholder="título, autor, DOI...")
     year_range = st.slider("Rango de años", 1990, 2026, (2015, 2026))
     filter_by_source = st.multiselect("Filtrar por fuente:", SOURCE_NAMES, default=SOURCE_NAMES)
+    available_levels = ["L1", "L2", "L3", "L4"] if search_mode == "📋 Presets (L1-L4)" else ["custom"]
     filter_by_level = st.multiselect(
         "Filtrar por nivel:",
-        ["L1", "L2", "L3", "L4"],
-        default=["L1", "L2", "L3", "L4"],
+        available_levels,
+        default=available_levels,
     )
 
 # ── Main content ───────────────────────────────────────────────────────
@@ -342,6 +343,7 @@ if run_clicked:
 
     st.session_state["articles"] = articles
     st.session_state["ran"] = True
+    st.success(f"✅ Pipeline completado: {len(articles)} artículos obtenidos")
 
 # ── Cargar artículos ───────────────────────────────────────────────────
 articles = st.session_state.get("articles", [])
@@ -352,12 +354,17 @@ if not has_data:
     st.stop()
 
 # ── Aplicar filtros de visualización ───────────────────────────────────
+# Si es query custom, no filtrar por level (los artículos tienen level="custom")
+effective_levels = None
+if search_mode == "📋 Presets (L1-L4)":
+    effective_levels = filter_by_level
+
 filtered = filter_articles(
     articles,
     query=search_filter,
     year_range=year_range,
     sources=filter_by_source,
-    levels=filter_by_level,
+    levels=effective_levels,
 )
 
 # ── Métricas ───────────────────────────────────────────────────────────
