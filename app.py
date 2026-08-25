@@ -23,6 +23,14 @@ logging.basicConfig(
 # Añadir src al path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+# Cargar API keys ANTES de importar polymer_pipeline
+# (settings.py evalúa os.getenv() al importar, así que necesita las env vars listas)
+from dotenv import load_dotenv
+load_dotenv(
+    dotenv_path=Path(__file__).parent / "API_KEY.env",
+    override=True,
+)
+
 from polymer_pipeline.settings import load_settings
 from polymer_pipeline.dict import LEVELS, SEARCH_QUERIES, build_boolean_query
 from polymer_pipeline.sources import SOURCES, SOURCE_NAMES
@@ -53,8 +61,8 @@ def _save_presets(presets: dict) -> None:
 
 # ── Page config ────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Polymer Data Pipeline",
-    page_icon="🧪",
+    page_title="SciSearch",
+    page_icon="🔎",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -275,7 +283,7 @@ with st.sidebar:
     )
 
 # ── Main content ───────────────────────────────────────────────────────
-st.title("🧪 Polymer Data Pipeline")
+st.title("SciSearch")
 st.caption("Dashboard de artículos científicos consolidados y deduplicados")
 
 # ── Ejecutar pipeline ──────────────────────────────────────────────────
@@ -378,23 +386,7 @@ c3.metric("📝 Con Abstract", f"{metrics['with_abstract']}", f"{metrics['with_a
 c4.metric("📎 Con PDF", f"{metrics['with_pdf']}", f"{metrics['with_pdf']/max(metrics['total'],1)*100:.0f}%")
 c5.metric("👤 Autor Desc.", f"{metrics['unknown_author']}", f"{metrics['unknown_author']/max(metrics['total'],1)*100:.0f}%")
 
-# ── Gráficas ───────────────────────────────────────────────────────────
-st.subheader("📈 Análisis Visual")
 
-plots = generate_interactive_plots(filtered)
-
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Por Año", "📚 Revistas", "🔤 Keywords", "🌐 Fuentes", "🏷️ Niveles"])
-
-with tab1:
-    st.plotly_chart(plots["year"], use_container_width=True)
-with tab2:
-    st.plotly_chart(plots["journals"], use_container_width=True)
-with tab3:
-    st.plotly_chart(plots["keywords"], use_container_width=True)
-with tab4:
-    st.plotly_chart(plots["sources"], use_container_width=True)
-with tab5:
-    st.plotly_chart(plots["levels"], use_container_width=True)
 
 # ── Tabla de resultados ────────────────────────────────────────────────
 st.subheader(f"📋 Resultados ({len(filtered)} artículos)")
@@ -491,25 +483,46 @@ if not display_df.empty:
                     use_container_width=True,
                 )
 
-    # Export
-    st.divider()
-    st.subheader("📥 Exportar")
-    col_exp1, col_exp2, col_exp3 = st.columns(3)
-    with col_exp1:
-        if st.button("📄 Exportar CSV"):
-            export_csv(filtered, filepath="/tmp/export.csv")
-            st.success("CSV exportado")
-    with col_exp2:
-        if st.button("📚 Exportar BibTeX"):
-            export_bibtex(filtered, filepath="/tmp/export.bib")
-            st.success("BibTeX exportado")
-    with col_exp3:
-        json_str = json.dumps(filtered, indent=2, ensure_ascii=False)
-        st.download_button(
-            "💾 Descargar JSON",
-            data=json_str,
-            file_name="polymer_results.json",
-            mime="application/json",
-        )
-else:
-    st.warning("No se encontraron resultados con los filtros actuales.")
+
+
+# ── Gráficas ───────────────────────────────────────────────────────────
+st.subheader("📈 Análisis Visual")
+
+plots = generate_interactive_plots(filtered)
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Por Año", "📚 Revistas", "🔤 Keywords", "🌐 Fuentes", "🏷️ Niveles"])
+
+with tab1:
+    st.plotly_chart(plots["year"], use_container_width=True)
+with tab2:
+    st.plotly_chart(plots["journals"], use_container_width=True)
+with tab3:
+    st.plotly_chart(plots["keywords"], use_container_width=True)
+with tab4:
+    st.plotly_chart(plots["sources"], use_container_width=True)
+with tab5:
+    st.plotly_chart(plots["levels"], use_container_width=True)
+
+    
+
+# Export
+# Export
+st.divider()
+st.subheader("📥 Exportar")
+col_exp1, col_exp2, col_exp3 = st.columns(3)
+with col_exp1:
+    if st.button("📄 Exportar CSV"):
+        export_csv(filtered, filepath="/tmp/export.csv")
+        st.success("CSV exportado")
+with col_exp2:
+    if st.button("📚 Exportar BibTeX"):
+        export_bibtex(filtered, filepath="/tmp/export.bib")
+        st.success("BibTeX exportado")
+with col_exp3:
+    json_str = json.dumps(filtered, indent=2, ensure_ascii=False)
+    st.download_button(
+        "💾 Descargar JSON",
+        data=json_str,
+        file_name="polymer_results.json",
+        mime="application/json",
+    )
