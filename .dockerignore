@@ -1,0 +1,15 @@
+.git
+.gitignore
+.cache
+__pycache__
+*.pyc
+.pytest_cache
+.venv
+*.egg-info
+dist
+build
+plots_output
+downloads
+dashboard.html
+consolidated_results.*
+tests
