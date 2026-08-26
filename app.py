@@ -484,9 +484,10 @@ if not display_df.empty:
         with col_sel2:
             from polymer_pipeline.export import export_bibtex as _export_bib
             import tempfile
+            from pathlib import Path
             with tempfile.NamedTemporaryFile(suffix=".bib", delete=False) as tmp:
                 _export_bib(selected_articles, filepath=tmp.name)
-                bib_content = tmp.read_text()
+                bib_content = Path(tmp.name).read_text()
             st.download_button(
                 "Exportar seleccionados (BibTeX)",
                 data=bib_content,
