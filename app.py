@@ -6,6 +6,7 @@ Ejecutar con: streamlit run app.py
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import sys
@@ -13,6 +14,19 @@ from pathlib import Path
 
 import streamlit as st
 import pandas as pd
+
+
+def _run_async(coro):
+    """Ejecuta un coroutine desde contexto sync, incluso con event loop activo."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
 
 # Configurar logging
 logging.basicConfig(
@@ -333,7 +347,7 @@ if run_clicked:
     # Ejecutar con spinner
     with st.spinner("🔄 Consultando APIs científicas... Esto puede tomar 30-60 segundos."):
         try:
-            articles = asyncio.run(run_pipeline(
+            articles = _run_async(run_pipeline(
                 levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
                 sources=selected_sources,
                 max_results=max_results,
