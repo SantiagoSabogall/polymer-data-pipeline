@@ -82,6 +82,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+<style>
+    .stDataFrame td, .stDataFrame th {
+        font-size: 15px !important;
+    }
+    [data-testid="stDataFrame"] td {
+        font-size: 15px !important;
+        line-height: 1.5;
+    }
+    [data-testid="stDataFrame"] th {
+        font-size: 16px !important;
+        font-weight: 600;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Sidebar ────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Configuración del Pipeline")
