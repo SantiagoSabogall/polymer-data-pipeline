@@ -11,6 +11,18 @@ The pipeline supports three search modes:
 - **Free search**: Custom boolean queries with full control over search terms
 - **Visual builder**: GUI-based query construction for users unfamiliar with boolean syntax
 
+## Features
+
+- **Async HTTP**: All 8 APIs queried concurrently with aiohttp
+- **Rate limiting**: Per-API limits to avoid being blocked (Crossref 40/s, PubMed 9/s, etc.)
+- **Automatic retry**: Exponential backoff with jitter on failures
+- **Three search modes**: Presets (L1-L4), free boolean search, visual query builder
+- **Multi-row selection**: Select multiple articles and export only those
+- **Interactive charts**: Plotly visualizations (year, journals, keywords, sources, levels)
+- **Data quality metrics**: Coverage stats for DOI, abstracts, PDFs
+- **Saved searches**: Store and load search configurations from JSON
+- **Docker support**: One-command deployment with docker-compose
+
 ## Supported Databases
 
 | Database | Rate Limit | Notes |
@@ -68,7 +80,8 @@ Opens the interactive dashboard at `http://localhost:8501`. From the sidebar you
 - Choose which databases to query
 - Set maximum results per query
 - Apply post-search filters (text, year, source, level)
-- Export filtered results as CSV, BibTeX, or JSON
+- Select multiple articles in the results table
+- Export selected or all results as CSV, BibTeX, or JSON
 
 ### Command Line
 
