@@ -5,6 +5,7 @@ Ejecutar con: streamlit run app.py
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sys
@@ -332,14 +333,14 @@ if run_clicked:
     # Ejecutar con spinner
     with st.spinner("🔄 Consultando APIs científicas... Esto puede tomar 30-60 segundos."):
         try:
-            articles = run_pipeline(
+            articles = asyncio.run(run_pipeline(
                 levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
                 sources=selected_sources,
                 max_results=max_results,
                 progress_callback=update_progress,
                 custom_queries=custom_queries,
                 custom_filter_rules=custom_filter_rules,
-            )
+            ))
             logging.info(f"[DEBUG] Pipeline returned {len(articles)} articles")
         except Exception as e:
             logging.error(f"[DEBUG] Pipeline error: {e}")

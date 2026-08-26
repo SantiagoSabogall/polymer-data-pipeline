@@ -1,14 +1,14 @@
-"""Lógica de negocio compartida entre CLI y Streamlit.
+"""Lógica de negocio compartida entre CLI y Streamlit (async).
 
-Extrae la orquestación del pipeline en funciones puras que cualquier
-interfaz (CLI, Streamlit, FastAPI) puede llamar sin side effects.
+Extrae la orquestación del pipeline en funciones async que cualquier
+interfaz (CLI, Streamlit, FastAPI) puede llamar con asyncio.run().
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY, MAX_WORKERS
@@ -56,17 +56,18 @@ def _build_fetcher_specs(
     return specs
 
 
-def _fetch_task(
+async def _fetch_task(
     level: str,
     query: str,
     fn: Callable,
     args: tuple,
     kwargs: dict,
 ) -> dict:
+    """Ejecuta un fetcher individual de forma asíncrona."""
     name = fn.__name__
     t0 = time.monotonic()
     try:
-        articles = fn(*args, **kwargs)
+        articles = await fn(*args, **kwargs)
         elapsed = time.monotonic() - t0
         logger.info("[%s] Terminado en %.1fs -> %d artículos.", name, elapsed, len(articles))
         return {"level": level, "query": query, "source": name, "ok": True, "articles": articles}
@@ -76,24 +77,27 @@ def _fetch_task(
         return {"level": level, "query": query, "source": name, "ok": False, "articles": []}
 
 
-def _collect(
+async def _collect(
     tasks: list[tuple],
     progress_callback: Callable | None = None,
 ) -> dict:
-    """Ejecuta todas las tareas en un pool global con callback de progreso."""
+    """Ejecuta todas las tareas en paralelo con asyncio.gather."""
     results_by_query: dict = {}
     total = len(tasks)
     completed = 0
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_fetch_task, *t): t for t in tasks}
-        for future in as_completed(futures):
-            result = future.result()
-            key = (result["level"], result["query"])
-            results_by_query.setdefault(key, []).append(result)
-            completed += 1
-            if progress_callback:
-                progress_callback(completed, total, result["source"])
+    async_tasks = [
+        asyncio.create_task(_fetch_task(*t))
+        for t in tasks
+    ]
+
+    for coro in asyncio.as_completed(async_tasks):
+        result = await coro
+        key = (result["level"], result["query"])
+        results_by_query.setdefault(key, []).append(result)
+        completed += 1
+        if progress_callback:
+            progress_callback(completed, total, result["source"])
 
     return results_by_query
 
@@ -133,7 +137,7 @@ def _dedupe(
     return all_articles
 
 
-def run_pipeline(
+async def run_pipeline(
     levels: list[str] | None = None,
     sources: list[str] | None = None,
     max_results: int = 250,
@@ -141,7 +145,7 @@ def run_pipeline(
     custom_queries: dict[str, list[str]] | None = None,
     custom_filter_rules: dict[str, list[list[str]]] | None = None,
 ) -> list[dict]:
-    """Ejecuta el pipeline completo con los niveles y fuentes indicados.
+    """Ejecuta el pipeline completo de forma asíncrona.
 
     Args:
         levels: Lista de niveles a ejecutar (default: todos).
@@ -149,14 +153,11 @@ def run_pipeline(
         max_results: Máximo de resultados por query por fuente.
         progress_callback: fn(completed, total, source_name) para progreso.
         custom_queries: Queries personalizadas {level: [query_strings]}.
-                        Si se provee, tiene prioridad sobre SEARCH_QUERIES.
         custom_filter_rules: Reglas de filtro personalizadas {level: [groups]}.
-                             Si se provee, tiene prioridad sobre LEVEL_FILTER_RULES.
 
     Returns:
         Lista de artículos normalizados, filtrados y deduplicados.
     """
-    # Seleccionar queries: custom_queries tiene prioridad
     if custom_queries:
         queries = custom_queries
     elif levels:
@@ -164,17 +165,14 @@ def run_pipeline(
     else:
         queries = dict(SEARCH_QUERIES)
 
-    # Seleccionar reglas de filtro
     if custom_filter_rules is not None:
         filter_rules = custom_filter_rules
     else:
         filter_rules = {k: v for k, v in LEVEL_FILTER_RULES.items() if k in queries}
-        # Si algún nivel no tiene reglas, no filtrar por título (lista vacía = sin filtro)
         for level in queries:
             if level not in filter_rules:
                 filter_rules[level] = []
 
-    # Construir tareas
     tasks: list[tuple] = []
     for level, level_queries in queries.items():
         for q in level_queries:
@@ -183,10 +181,8 @@ def run_pipeline(
 
     logger.info("[Pipeline] %d tareas a ejecutar", len(tasks))
 
-    # Ejecutar
-    results_by_query = _collect(tasks, progress_callback)
+    results_by_query = await _collect(tasks, progress_callback)
 
-    # Filtrar y deduplicar
     articles = _dedupe(results_by_query, queries, filter_rules)
     logger.info("[Pipeline] %d artículos únicos después de filtrado", len(articles))
 

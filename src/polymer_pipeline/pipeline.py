@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from polymer_pipeline.settings import (
-    load_settings, TOTAL_RESULTS_PER_QUERY, MAX_WORKERS,
-)
+from polymer_pipeline.settings import load_settings, TOTAL_RESULTS_PER_QUERY, MAX_WORKERS
 from polymer_pipeline.dict import SEARCH_QUERIES
 from polymer_pipeline.filters import passes_filter
 from polymer_pipeline.plots import generate_all_plots
@@ -29,8 +27,6 @@ from polymer_pipeline.fetchers import (
 
 logger = logging.getLogger(__name__)
 
-# Semantic Scholar activa: usa /paper/search/bulk con throttle de 1 req/s
-# (límite estándar con API key) y backoff ante 429. Funciona también sin key.
 ENABLE_SEMANTIC_SCHOLAR = True
 
 
@@ -50,12 +46,12 @@ def _fetcher_specs(query: str) -> list[tuple]:
     return specs
 
 
-def _fetch_task(level: str, query: str, fn, args: tuple, kwargs: dict) -> dict:
+async def _fetch_task(level: str, query: str, fn, args: tuple, kwargs: dict) -> dict:
     name = fn.__name__
     logger.info("[%s] Iniciando: %s...", name, query[:60])
     t0 = time.monotonic()
     try:
-        articles = fn(*args, **kwargs)
+        articles = await fn(*args, **kwargs)
         elapsed = time.monotonic() - t0
         logger.info("[%s] Terminado en %.1fs -> %d artículos.", name, elapsed, len(articles))
         return {
@@ -77,19 +73,20 @@ def _fetch_task(level: str, query: str, fn, args: tuple, kwargs: dict) -> dict:
         }
 
 
-def _collect(tasks: list[tuple]) -> dict:
-    """Ejecuta todas las tareas (nivel, consulta, fetcher) en un pool global."""
+async def _collect(tasks: list[tuple]) -> dict:
+    """Ejecuta todas las tareas en paralelo con asyncio.gather."""
     results_by_query: dict = {}
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(_fetch_task, *t): t for t in tasks}
-        for future in as_completed(futures):
-            result = future.result()
-            key = (result["level"], result["query"])
-            results_by_query.setdefault(key, []).append(result)
+    async_tasks = [asyncio.create_task(_fetch_task(*t)) for t in tasks]
+
+    for coro in asyncio.as_completed(async_tasks):
+        result = await coro
+        key = (result["level"], result["query"])
+        results_by_query.setdefault(key, []).append(result)
+
     return results_by_query
 
 
-def _filter_and_dedupe(
+async def _filter_and_dedupe(
     results_by_query: dict,
     seen_dois: set[str],
     seen_titles: set[str],
@@ -154,7 +151,7 @@ def _filter_and_dedupe(
     return all_normalized_articles, stats
 
 
-def main() -> None:
+async def main() -> None:
     load_settings()
 
     logger.info("=" * 60)
@@ -168,13 +165,13 @@ def main() -> None:
                 tasks.append((level, q, fn, args, kwargs))
 
     logger.info("[Pipeline] Lanzando %d tareas (nivel, consulta, API) en paralelo...", len(tasks))
-    results_by_query = _collect(tasks)
+    results_by_query = await _collect(tasks)
 
     PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
     seen_dois: set[str] = set()
     seen_titles: set[str] = set()
-    all_normalized_articles, _ = _filter_and_dedupe(results_by_query, seen_dois, seen_titles)
+    all_normalized_articles, _ = await _filter_and_dedupe(results_by_query, seen_dois, seen_titles)
 
     json_output_path = PROJECT_ROOT / "consolidated_results.json"
     with open(json_output_path, "w", encoding="utf-8") as f:

@@ -9,17 +9,14 @@ from polymer_pipeline.settings import (
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
 URL = "https://api.elsevier.com/content/search/scopus"
-HEADERS = {
-    "X-ELS-APIKey": ELSEVIER_API_KEY,
-    "Accept": "application/json",
-}
 
 
-def fetch_elsevier(query: str) -> list[dict]:
+async def fetch_elsevier(query: str) -> list[dict]:
     cache_key = f"Elsevier:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
@@ -84,9 +81,20 @@ def fetch_elsevier(query: str) -> list[dict]:
         name="Elsevier",
     )
 
-    with make_session() as session:
-        session.headers.update(HEADERS)
-        normalized = fetcher.run(session)
+    headers = {
+        "X-ELS-APIKey": ELSEVIER_API_KEY,
+        "Accept": "application/json",
+    }
+
+    limiter = get_rate_limiter("Elsevier")
+    async with limiter:
+        async with await make_session() as session:
+            session.headers.update(headers)
+            normalized = await fetcher.run(session)
+
+            # Leer headers de rate limit de Elsevier
+            if hasattr(session, '_response_headers'):
+                pass  # Los headers se leen por petición en PageFetcher
 
     set_cache(cache_key, normalized)
     return normalized

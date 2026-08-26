@@ -9,13 +9,14 @@ from polymer_pipeline.settings import (
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.query_builder import build_springer_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
 URL = "https://api.springernature.com/meta/v2/json"
 
 
-def fetch_springer(query: str) -> list[dict]:
+async def fetch_springer(query: str) -> list[dict]:
     cache_key = f"Springer:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
@@ -74,7 +75,6 @@ def fetch_springer(query: str) -> list[dict]:
         result_info = data.get("result", [{}])
         return int(result_info[0].get("total", 0)) if result_info else 0
 
-    # Springer empieza la paginación en s=1.
     fetcher = PageFetcher(
         url=URL,
         batch_size=BATCH_SIZE,
@@ -87,8 +87,10 @@ def fetch_springer(query: str) -> list[dict]:
         initial_start=1,
     )
 
-    with make_session() as session:
-        normalized = fetcher.run(session)
+    limiter = get_rate_limiter("Springer")
+    async with limiter:
+        async with await make_session() as session:
+            normalized = await fetcher.run(session)
 
     set_cache(cache_key, normalized)
     return normalized

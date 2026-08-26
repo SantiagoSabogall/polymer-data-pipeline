@@ -1,14 +1,16 @@
-"""Lógica compartida para fetchers que usan la API de OpenAlex.
-
-OpenAlex y MDPI comparten la misma paginación por cursor, normalización
-de DOI y reconstrucción de abstracts. Este módulo evita duplicación.
-"""
+"""Lógica compartida asíncrona para fetchers que usan la API de OpenAlex."""
 
 from __future__ import annotations
 
-import time
+import asyncio
+import logging
 
-from polymer_pipeline.http import make_session
+import aiohttp
+
+from polymer_pipeline.http import make_session, request_with_retry
+from polymer_pipeline.rate_limiter import get_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 OPENALEX_API_URL = "https://api.openalex.org/works"
 MAX_RETRIES = 5
@@ -16,7 +18,7 @@ MAX_PER_PAGE = 200
 
 
 def extract_doi(raw_doi: str) -> str:
-    """Normaliza el DOI de OpenAlex (URL completa) a solo el identificador."""
+    """Normaliza el DOI de OpenAlex."""
     if not raw_doi:
         return ""
     return raw_doi.replace("https://doi.org/", "").lower().strip()
@@ -71,7 +73,7 @@ def normalize_work(work: dict, source_label: str) -> dict:
     }
 
 
-def paginated_fetch(
+async def paginated_fetch(
     *,
     query: str,
     max_results: int,
@@ -81,89 +83,94 @@ def paginated_fetch(
     source_label: str,
     extra_params: dict | None = None,
 ) -> tuple[list[dict], bool]:
-    """Ejecuta una búsqueda paginada por cursor en OpenAlex.
-
-    Devuelve (resultados, es_completo).
-    """
+    """Ejecuta una búsqueda paginada por cursor en OpenAlex (async)."""
     normalized: list[dict] = []
     retries = 0
     complete = True
     per_page = min(MAX_PER_PAGE, max_results)
     cursor = "*"
 
-    with make_session(backoff_factor=2.0) as session:
-        session.headers.update({
-            "User-Agent": f"polymer-pipeline/1.0 (mailto:{mailto or 'unknown'})"
-        })
+    limiter = get_rate_limiter(source_label)
 
-        while len(normalized) < max_results:
-            params: dict = {
-                "search": query,
-                "per_page": per_page,
-                "cursor": cursor,
-            }
-            if mailto:
-                params["mailto"] = mailto
-            if api_key:
-                params["api_key"] = api_key
-            if extra_params:
-                params.update(extra_params)
+    async with limiter:
+        async with await make_session(timeout=20) as session:
+            session.headers.update({
+                "User-Agent": f"polymer-pipeline/1.0 (mailto:{mailto or 'unknown'})"
+            })
 
-            try:
-                resp = session.get(OPENALEX_API_URL, params=params, timeout=20)
+            while len(normalized) < max_results:
+                params: dict = {
+                    "search": query,
+                    "per_page": per_page,
+                    "cursor": cursor,
+                }
+                if mailto:
+                    params["mailto"] = mailto
+                if api_key:
+                    params["api_key"] = api_key
+                if extra_params:
+                    params.update(extra_params)
 
-                if resp.status_code == 429:
-                    retry_after = resp.headers.get("Retry-After", "")
-                    try:
-                        retry_after_s = int(retry_after)
-                    except ValueError:
-                        retry_after_s = 0
-                    if retry_after_s > 120:
-                        print(f"[{source_label}] Cuota diaria agotada en OpenAlex "
-                              f"(Retry-After={retry_after_s}s = {retry_after_s // 3600}h). "
-                              f"Abortando query.")
+                try:
+                    resp = await request_with_retry(
+                        session, "GET", OPENALEX_API_URL, params=params,
+                        max_retries=3,
+                    )
+
+                    if resp is None:
+                        logger.warning("[%s] Sin respuesta (cursor=%s)", source_label, cursor)
                         complete = False
                         break
-                    retries += 1
-                    if retries > MAX_RETRIES:
-                        print(f"[{source_label}] Reintentos agotados (cursor={cursor}). "
-                              f"Abortando query.")
+
+                    if resp.status == 429:
+                        retry_after = resp.headers.get("Retry-After", "")
+                        try:
+                            retry_after_s = int(retry_after)
+                        except ValueError:
+                            retry_after_s = 0
+                        if retry_after_s > 120:
+                            logger.warning(
+                                "[%s] Cuota diaria agotada en OpenAlex (Retry-After=%ds). Abortando.",
+                                source_label, retry_after_s,
+                            )
+                            complete = False
+                            break
+                        retries += 1
+                        if retries > MAX_RETRIES:
+                            logger.warning("[%s] Reintentos agotados (cursor=%s). Abortando.", source_label, cursor)
+                            complete = False
+                            break
+                        wait = min(2 ** retries, 60) + 0.5
+                        logger.info("[%s] 429. Backoff %ds (intento %d/%d).", source_label, wait, retries, MAX_RETRIES)
+                        await asyncio.sleep(wait)
+                        continue
+
+                    retries = 0
+
+                    if resp.status != 200:
+                        logger.error("[%s] Error %d (cursor=%s).", source_label, resp.status, cursor)
                         complete = False
                         break
-                    wait = min(2 ** retries, 60)
-                    print(f"[{source_label}] 429. Backoff {wait}s "
-                          f"(intento {retries}/{MAX_RETRIES}).")
-                    time.sleep(wait)
-                    continue
 
-                retries = 0
+                    data = await resp.json()
+                    results = data.get("results", [])
+                    if not results:
+                        break
 
-                if resp.status_code != 200:
-                    print(f"[{source_label}] Error {resp.status_code} (cursor={cursor}). "
-                          f"Cuerpo: {resp.text[:200]!r}")
+                    for work in results:
+                        normalized.append(normalize_work(work, source_label))
+                        if len(normalized) >= max_results:
+                            break
+
+                    cursor = data.get("meta", {}).get("next_cursor")
+                    if not cursor:
+                        break
+
+                    await asyncio.sleep(sleep)
+
+                except Exception as e:
+                    logger.error("[%s] Excepción (cursor=%s): %s: %s", source_label, cursor, type(e).__name__, e)
                     complete = False
                     break
-
-                data = resp.json()
-                results = data.get("results", [])
-                if not results:
-                    break
-
-                for work in results:
-                    normalized.append(normalize_work(work, source_label))
-                    if len(normalized) >= max_results:
-                        break
-
-                cursor = data.get("meta", {}).get("next_cursor")
-                if not cursor:
-                    break
-
-                time.sleep(sleep)
-
-            except Exception as e:
-                print(f"[{source_label}] Excepción (cursor={cursor}): "
-                      f"{type(e).__name__}: {e}")
-                complete = False
-                break
 
     return normalized, complete
