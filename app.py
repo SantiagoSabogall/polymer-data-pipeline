@@ -84,6 +84,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    /* Tabla de resultados */
     .stDataFrame td, .stDataFrame th {
         font-size: 15px !important;
     }
@@ -94,6 +95,20 @@ st.markdown("""
     [data-testid="stDataFrame"] th {
         font-size: 16px !important;
         font-weight: 600;
+    }
+    
+    /* Metricas */
+    [data-testid="stMetric"] {
+        background-color: #1e293b;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    
+    /* Responsive: sidebar mas angosta en pantallas pequenas */
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            width: 280px !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -374,7 +389,15 @@ if run_clicked:
             logging.info(f"[DEBUG] Pipeline returned {len(articles)} articles")
         except Exception as e:
             logging.error(f"[DEBUG] Pipeline error: {e}")
-            st.error(f"Error: {e}")
+            error_msg = str(e)
+            if "429" in error_msg or "rate" in error_msg.lower():
+                st.error("Error: Limite de velocidad alcanzado. Intenta con menos fuentes o reduce maximo de resultados.")
+            elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                st.error("Error: Tiempo de espera agotado. La API no respondio a tiempo. Intenta de nuevo.")
+            elif "connection" in error_msg.lower() or "connect" in error_msg.lower():
+                st.error("Error: No se pudo conectar a la API. Verifica tu conexion a internet.")
+            else:
+                st.error(f"Error en el pipeline: {error_msg[:200]}")
             articles = []
 
     progress_bar.empty()
@@ -559,7 +582,8 @@ if not display_df.empty:
 # ── Gráficas ───────────────────────────────────────────────────────────
 st.subheader("Analisis Visual")
 
-plots = generate_interactive_plots(filtered)
+with st.spinner("Generando graficas..."):
+    plots = generate_interactive_plots(filtered)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Por Anio", "Revistas", "Keywords", "Fuentes", "Niveles"])
 
