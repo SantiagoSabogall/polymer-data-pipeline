@@ -99,8 +99,11 @@ async def paginated_fetch(
             })
 
             while len(normalized) < max_results:
+                from polymer_pipeline.query_builder import TITLE_ABS_ONLY
+
+                search_key = "title_and_abstract.search" if TITLE_ABS_ONLY else "search"
                 params: dict = {
-                    "search": query,
+                    search_key: query,
                     "per_page": per_page,
                     "cursor": cursor,
                 }

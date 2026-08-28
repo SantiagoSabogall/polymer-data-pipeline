@@ -11,19 +11,20 @@ import logging
 import time
 from typing import Callable
 
-from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY, MAX_WORKERS
-from polymer_pipeline.dict import SEARCH_QUERIES, LEVEL_FILTER_RULES, build_boolean_query
-from polymer_pipeline.filters import passes_filter
+from polymer_pipeline.dict import LEVEL_FILTER_RULES, SEARCH_QUERIES
 from polymer_pipeline.fetchers import (
     fetch_crossref,
-    fetch_springer,
     fetch_elsevier,
-    fetch_pubmed,
-    fetch_openalex,
-    fetch_mdpi,
-    fetch_semantic_scholar,
     fetch_lens,
+    fetch_mdpi,
+    fetch_openalex,
+    fetch_pubmed,
+    fetch_semantic_scholar,
+    fetch_springer,
 )
+from polymer_pipeline.filters import passes_filter
+from polymer_pipeline.query_builder import PRESERVE_QUOTES, TITLE_ABS_ONLY  # noqa: F401
+from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY
 
 logger = logging.getLogger(__name__)
 
@@ -158,12 +159,20 @@ async def run_pipeline(
     Returns:
         Lista de artículos normalizados, filtrados y deduplicados.
     """
+    global PRESERVE_QUOTES, TITLE_ABS_ONLY
+
     if custom_queries:
         queries = custom_queries
+        PRESERVE_QUOTES = True
+        TITLE_ABS_ONLY = True
     elif levels:
         queries = {k: v for k, v in SEARCH_QUERIES.items() if k in levels}
+        PRESERVE_QUOTES = False
+        TITLE_ABS_ONLY = False
     else:
         queries = dict(SEARCH_QUERIES)
+        PRESERVE_QUOTES = False
+        TITLE_ABS_ONLY = False
 
     if custom_filter_rules is not None:
         filter_rules = custom_filter_rules
@@ -172,6 +181,28 @@ async def run_pipeline(
         for level in queries:
             if level not in filter_rules:
                 filter_rules[level] = []
+
+    if TITLE_ABS_ONLY and custom_queries:
+        from polymer_pipeline.query_builder import parse_boolean_query
+
+        for lvl, qs in queries.items():
+            if lvl not in filter_rules or not filter_rules[lvl]:
+                # Generar reglas desde la query misma (título o abstract debe contener el término)
+                combined_groups: list[list[str]] = []
+                for q in qs:
+                    groups = parse_boolean_query(q)
+                    # parse respeta PRESERVE_QUOTES, limpiar comillas para el filtro
+                    for g in groups:
+                        cleaned = [t.strip('"').strip("'") for t in g if t.strip('"').strip("'")]
+                        if cleaned:
+                            combined_groups.append(cleaned)
+                if combined_groups:
+                    filter_rules[lvl] = combined_groups
+                elif qs and qs[0].strip():
+                    raw = qs[0].strip().strip('"').strip("'")
+                    # free text sin AND, ej "Andromeda"
+                    if raw and " AND " not in qs[0] and " OR " not in qs[0]:
+                        filter_rules[lvl] = [[raw]]
 
     tasks: list[tuple] = []
     for level, level_queries in queries.items():
@@ -182,6 +213,9 @@ async def run_pipeline(
     logger.info("[Pipeline] %d tareas a ejecutar", len(tasks))
 
     results_by_query = await _collect(tasks, progress_callback)
+
+    PRESERVE_QUOTES = False
+    TITLE_ABS_ONLY = False
 
     articles = _dedupe(results_by_query, queries, filter_rules)
     logger.info("[Pipeline] %d artículos únicos después de filtrado", len(articles))
@@ -244,5 +278,8 @@ def compute_quality_metrics(articles: list[dict]) -> dict:
         "with_abstract": sum(1 for a in articles if a.get("abstract")),
         "with_pdf": sum(1 for a in articles if a.get("pdf_url")),
         "unknown_author": sum(1 for a in articles if a.get("author") == "Desconocido"),
-        "unknown_journal": sum(1 for a in articles if a.get("journal") in ("No disponible", "Desconocido")),
+        "unknown_journal": sum(
+            1 for a in articles
+            if a.get("journal") in ("No disponible", "Desconocido")
+        ),
     }

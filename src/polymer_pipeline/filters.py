@@ -78,8 +78,31 @@ def passes_filter(
     if not title or title == "Sin título":
         return False
 
-    # Fuentes con relevancia built-in saltan el filtro
+    from polymer_pipeline.query_builder import TITLE_ABS_ONLY
+
     source = article.get("source", "")
+
+    if TITLE_ABS_ONLY and level == "custom":
+        if source == "SemanticScholar":
+            return True
+        combined = f"{title} {article.get('abstract') or ''}"
+        rules_local = None
+        if custom_rules:
+            rules_local = custom_rules.get(level)
+        if rules_local is None:
+            rules_local = LEVEL_FILTER_RULES.get(level)
+        if rules_local is not None:
+            if not rules_local:
+                return True
+            cleaned = [[t.strip('"').strip("'") for t in g] for g in rules_local]
+            matches = sum(1 for g in cleaned if contains_any_term(combined, g))
+            if len(cleaned) == 1:
+                return matches >= 1
+            if len(cleaned) == 2:
+                return matches >= 2
+            return matches >= 2
+        return bool(combined.strip())
+
     if source in SOURCES_WITH_BUILTIN_FILTER:
         return True
 

@@ -84,6 +84,8 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+    .block-container { padding-top: 1.5rem !important; }
+    h1 { margin-top: 0 !important; padding-top: 0 !important; }
     /* Tabla de resultados */
     .stDataFrame td, .stDataFrame th {
         font-size: 15px !important;

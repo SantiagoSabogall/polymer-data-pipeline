@@ -35,11 +35,19 @@ async def fetch_crossref(query: str) -> list[dict]:
         return cached
 
     translated = build_crossref_query(query)
+    from polymer_pipeline.query_builder import TITLE_ABS_ONLY
+
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
     }
 
     def build_params(start: int) -> dict:
+        if TITLE_ABS_ONLY:
+            return {
+                "query.bibliographic": translated,
+                "rows": CROSSREF_BATCH_SIZE,
+                "offset": start,
+            }
         return {
             "query": translated,
             "rows": CROSSREF_BATCH_SIZE,
