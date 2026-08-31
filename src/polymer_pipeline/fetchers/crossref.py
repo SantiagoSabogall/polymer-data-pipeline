@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 
-from polymer_pipeline.settings import (
-    TOTAL_RESULTS_PER_QUERY,
-    SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
-)
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import (
+    CROSSREF_EMAIL,
+    TOTAL_RESULTS_PER_QUERY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,9 @@ def _strip_jats_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-async def fetch_crossref(query: str) -> list[dict]:
+async def fetch_crossref(
+    query: str, title_abs_only: bool = False,
+) -> list[dict]:
     cache_key = f"Crossref:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
@@ -35,14 +37,13 @@ async def fetch_crossref(query: str) -> list[dict]:
         return cached
 
     translated = build_crossref_query(query)
-    from polymer_pipeline.query_builder import TITLE_ABS_ONLY
 
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
     }
 
     def build_params(start: int) -> dict:
-        if TITLE_ABS_ONLY:
+        if title_abs_only:
             return {
                 "query.bibliographic": translated,
                 "rows": CROSSREF_BATCH_SIZE,
@@ -60,7 +61,8 @@ async def fetch_crossref(query: str) -> list[dict]:
         for item in items:
             title = item.get("title", [""])[0] if item.get("title") else "Sin título"
             doi = item.get("DOI", "").lower().strip()
-            journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
+            container = item.get("container-title", [""])
+            journal = container[0] if item.get("container-title") else "No disponible"
 
             authors = item.get("author", [])
             author = "Desconocido"

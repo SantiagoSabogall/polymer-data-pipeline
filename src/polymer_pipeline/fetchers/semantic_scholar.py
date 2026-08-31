@@ -6,13 +6,11 @@ import asyncio
 import logging
 import time
 
-import aiohttp
-
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_semanticscholar_query
 from polymer_pipeline.http import make_session, request_with_retry
-from polymer_pipeline.settings import SEMANTIC_SCHOLAR_API_KEY
+from polymer_pipeline.query_builder import build_semanticscholar_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import SEMANTIC_SCHOLAR_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +95,21 @@ async def fetch_semantic_scholar(query: str, max_results: int = 100) -> list[dic
                             logger.warning("[SemanticScholar] Reintentos agotados. Abortando.")
                             break
                         wait = min(2 ** retries, 60) + 0.5
-                        logger.info("[SemanticScholar] 429. Esperando %ds (intento %d/%d).", wait, retries, MAX_RETRIES)
+                        logger.info(
+                            "[SemanticScholar] 429. Esperando %ds"
+                            " (intento %d/%d).",
+                            wait, retries, MAX_RETRIES,
+                        )
                         await asyncio.sleep(wait)
                         continue
 
                     retries = 0
 
                     if resp.status != 200:
-                        logger.error("[SemanticScholar] Error %d: %r", resp.status, (await resp.text())[:200])
+                        logger.error(
+                            "[SemanticScholar] Error %d: %r",
+                            resp.status, (await resp.text())[:200],
+                        )
                         break
 
                     data = await resp.json()

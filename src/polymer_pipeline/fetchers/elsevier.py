@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 
-from polymer_pipeline.settings import (
-    BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
-    SLEEP_BETWEEN_BATCHES, ELSEVIER_API_KEY,
-)
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import (
+    BATCH_SIZE,
+    ELSEVIER_API_KEY,
+    SLEEP_BETWEEN_BATCHES,
+    TOTAL_RESULTS_PER_QUERY,
+)
 
 logger = logging.getLogger(__name__)
 

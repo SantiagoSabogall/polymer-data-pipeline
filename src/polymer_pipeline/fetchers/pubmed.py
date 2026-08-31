@@ -3,13 +3,11 @@ from __future__ import annotations
 import logging
 import xml.etree.ElementTree as ET
 
-import aiohttp
-
-from polymer_pipeline.settings import NCBI_EMAIL, NCBI_API_KEY
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_pubmed_query
 from polymer_pipeline.http import make_session, request_with_retry
+from polymer_pipeline.query_builder import build_pubmed_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import NCBI_API_KEY, NCBI_EMAIL
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +35,15 @@ async def fetch_pubmed(query: str, max_results: int = 100) -> list[dict]:
     async with limiter:
         async with await make_session() as session:
             try:
-                resp = await request_with_retry(session, "GET", base_url + "esearch.fcgi", params=search_params)
+                resp = await request_with_retry(
+                    session, "GET", base_url + "esearch.fcgi",
+                    params=search_params,
+                )
                 if resp is None or resp.status != 200:
-                    logger.error("[PubMed] Error during esearch: status=%s", resp.status if resp else "None")
+                    logger.error(
+                        "[PubMed] Error during esearch: status=%s",
+                        resp.status if resp else "None",
+                    )
                     return []
                 data = await resp.json()
                 idlist = data.get("esearchresult", {}).get("idlist", [])
@@ -59,9 +63,15 @@ async def fetch_pubmed(query: str, max_results: int = 100) -> list[dict]:
             if NCBI_API_KEY:
                 fetch_params["api_key"] = NCBI_API_KEY
             try:
-                resp = await request_with_retry(session, "GET", base_url + "efetch.fcgi", params=fetch_params)
+                resp = await request_with_retry(
+                    session, "GET", base_url + "efetch.fcgi",
+                    params=fetch_params,
+                )
                 if resp is None or resp.status != 200:
-                    logger.error("[PubMed] Error during efetch: status=%s", resp.status if resp else "None")
+                    logger.error(
+                        "[PubMed] Error during efetch: status=%s",
+                        resp.status if resp else "None",
+                    )
                     return []
                 xml_content = await resp.text()
                 root = ET.fromstring(xml_content)

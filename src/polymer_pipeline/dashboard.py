@@ -51,7 +51,10 @@ def _stat_cards_html(level_counts, total_articles, levels):
         key = level["key"]
         cards.append(f'<div class="stat-card lvl-{key.lower()}">')
         cards.append(f'    <div class="label">{_level_display_name(level)}</div>')
-        cards.append(f'    <div class="value" id="stat-{key.lower()}">{level_counts.get(key, 0)}</div>')
+        cards.append(
+            f'    <div class="value" id="stat-{key.lower()}">'
+            f'{level_counts.get(key, 0)}</div>'
+        )
         cards.append("</div>")
     return "\n        ".join(cards)
 
@@ -103,7 +106,11 @@ def _source_stat_cards_html(results):
         cls = name.lower()
         cards.append(f'<div class="stat-card" style="--accent-primary:var(--source-{cls})">')
         cards.append(f'    <div class="label">{name}</div>')
-        cards.append(f'    <div class="value" style="color:var(--source-{cls})">{counts.get(name, 0)}</div>')
+        cards.append(
+            f'    <div class="value"'
+            f' style="color:var(--source-{cls})">'
+            f'{counts.get(name, 0)}</div>'
+        )
         cards.append("</div>")
     return "\n        ".join(cards)
 
@@ -152,7 +159,8 @@ def generate_dashboard(results, plots=None):
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Polymer Data Pipeline Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap"
+          rel="stylesheet">
     <style>
         :root {{
             --bg-dark: #0f172a;
@@ -180,8 +188,9 @@ def generate_dashboard(results, plots=None):
             color: var(--text-main);
             min-height: 100vh;
             overflow-x: hidden;
-            background-image: radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
-                              radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 40%);
+            background-image:
+              radial-gradient(circle at 10% 20%, rgba(14, 165, 233, 0.05) 0%, transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(139, 92, 246, 0.05) 0%, transparent 40%);
             background-attachment: fixed;
             padding: 2rem;
         }}
@@ -622,11 +631,15 @@ def generate_dashboard(results, plots=None):
     <div class="controls-card">
         <div class="search-row">
             <div class="search-box">
-                <input type="text" id="search-input" placeholder="Buscar por título, autor, revista, DOI..." oninput="filterData()">
+                <input type="text" id="search-input"
+                       placeholder="Buscar por título, autor, revista, DOI..."
+                       oninput="filterData()">
             </div>
 
             <div class="search-box" style="max-width: 400px;">
-                <input type="text" id="title-search-input" placeholder="Buscar palabra en títulos..." oninput="filterData()">
+                <input type="text" id="title-search-input"
+                       placeholder="Buscar palabra en títulos..."
+                       oninput="filterData()">
             </div>
 
             <div class="filter-group">
@@ -699,13 +712,16 @@ def generate_dashboard(results, plots=None):
             const sourceBadge = `<span class="badge ${{sourceClass}}">${{item.source}}</span>`;
 
             const doiHtml = item.doi
-                ? `<a class="doi-link" href="https://doi.org/${{item.doi}}" target="_blank">🔗 ${{item.doi}}</a>`
+                ? `<a class="doi-link"
+                      href="https://doi.org/${{item.doi}}"
+                      target="_blank">🔗 ${{item.doi}}</a>`
                 : '<span style="color:var(--text-muted); font-style:italic;">No disponible</span>';
 
             const abstractId = "abstract-" + Math.random().toString(36).substr(2, 9);
             const hasAbstract = item.abstract && item.abstract.trim().length > 0;
             const abstractButtonHtml = hasAbstract
-                ? `<button class="abstract-toggle" onclick="toggleAbstract('${{abstractId}}', this)">
+                ? `<button class="abstract-toggle"
+                      onclick="toggleAbstract('${{abstractId}}', this)">
                      <span class="arrow">▶</span> Abstract
                    </button>`
                 : `<span class="abstract-toggle" style="opacity:0.4; cursor:default;">
@@ -760,7 +776,9 @@ def generate_dashboard(results, plots=None):
 
     function filterData() {{
         const searchQuery = document.getElementById("search-input").value.toLowerCase().trim();
-        const titleSearchQuery = document.getElementById("title-search-input").value.toLowerCase().trim();
+        const titleSearchQuery = document
+            .getElementById("title-search-input")
+            .value.toLowerCase().trim();
 
         const filtered = dataset.filter(item => {{
             const matchesLevel = activeLevel === 'ALL' || item.level === activeLevel;
@@ -781,7 +799,9 @@ def generate_dashboard(results, plots=None):
         document.getElementById("stat-total").innerText = filtered.length;
         levelKeys.forEach(lk => {{
             const el = document.getElementById("stat-" + lk);
-            if (el) el.innerText = filtered.filter(i => (i.level || "").toLowerCase() === lk).length;
+            if (el) el.innerText = filtered
+                .filter(i => (i.level || "").toLowerCase() === lk)
+                .length;
         }});
 
         renderTable(filtered);

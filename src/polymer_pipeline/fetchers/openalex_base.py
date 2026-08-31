@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import aiohttp
-
 from polymer_pipeline.http import make_session, request_with_retry
 from polymer_pipeline.rate_limiter import get_rate_limiter
 
@@ -82,6 +80,7 @@ async def paginated_fetch(
     api_key: str | None,
     source_label: str,
     extra_params: dict | None = None,
+    title_abs_only: bool = False,
 ) -> tuple[list[dict], bool]:
     """Ejecuta una búsqueda paginada por cursor en OpenAlex (async)."""
     normalized: list[dict] = []
@@ -99,9 +98,7 @@ async def paginated_fetch(
             })
 
             while len(normalized) < max_results:
-                from polymer_pipeline.query_builder import TITLE_ABS_ONLY
-
-                search_key = "title_and_abstract.search" if TITLE_ABS_ONLY else "search"
+                search_key = "title_and_abstract.search" if title_abs_only else "search"
                 params: dict = {
                     search_key: query,
                     "per_page": per_page,
@@ -133,25 +130,35 @@ async def paginated_fetch(
                             retry_after_s = 0
                         if retry_after_s > 120:
                             logger.warning(
-                                "[%s] Cuota diaria agotada en OpenAlex (Retry-After=%ds). Abortando.",
+                                "[%s] Cuota diaria agotada en OpenAlex"
+                                " (Retry-After=%ds). Abortando.",
                                 source_label, retry_after_s,
                             )
                             complete = False
                             break
                         retries += 1
                         if retries > MAX_RETRIES:
-                            logger.warning("[%s] Reintentos agotados (cursor=%s). Abortando.", source_label, cursor)
+                            logger.warning(
+                                "[%s] Reintentos agotados (cursor=%s). Abortando.",
+                                source_label, cursor,
+                            )
                             complete = False
                             break
                         wait = min(2 ** retries, 60) + 0.5
-                        logger.info("[%s] 429. Backoff %ds (intento %d/%d).", source_label, wait, retries, MAX_RETRIES)
+                        logger.info(
+                            "[%s] 429. Backoff %ds (intento %d/%d).",
+                            source_label, wait, retries, MAX_RETRIES,
+                        )
                         await asyncio.sleep(wait)
                         continue
 
                     retries = 0
 
                     if resp.status != 200:
-                        logger.error("[%s] Error %d (cursor=%s).", source_label, resp.status, cursor)
+                        logger.error(
+                            "[%s] Error %d (cursor=%s).",
+                            source_label, resp.status, cursor,
+                        )
                         complete = False
                         break
 
@@ -172,7 +179,10 @@ async def paginated_fetch(
                     await asyncio.sleep(sleep)
 
                 except Exception as e:
-                    logger.error("[%s] Excepción (cursor=%s): %s: %s", source_label, cursor, type(e).__name__, e)
+                    logger.error(
+                        "[%s] Excepción (cursor=%s): %s: %s",
+                        source_label, cursor, type(e).__name__, e,
+                    )
                     complete = False
                     break
 

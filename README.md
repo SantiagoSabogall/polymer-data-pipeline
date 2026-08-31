@@ -83,6 +83,77 @@ Opens the interactive dashboard at `http://localhost:8501`. From the sidebar you
 - Select multiple articles in the results table
 - Export selected or all results as CSV, BibTeX, or JSON
 
+## Search Modes
+
+### Presets (L1-L4)
+
+Pre-configured searches for polymer research. Select one or more levels:
+
+- **L1 (Blends)**: Polyester blends with barrier properties
+- **L2 (Additives)**: Polyester with nanofillers/additives and barrier
+- **L3 (Packaging)**: Packaging materials with barrier and polyester
+- **L4 (Biodegradable)**: Biopolymers with barrier in packaging
+
+Each level has built-in relevance filtering to reduce noise.
+
+### Free Search
+
+Write boolean queries directly using AND/OR syntax.
+
+**Format:**
+
+```
+(grupo1) AND (grupo2) AND (grupo3)
+```
+
+Inside each group, terms are joined with OR automatically by the system.
+
+**Examples:**
+
+| Query | What it finds |
+|-------|--------------|
+| `(polyester OR PET) AND (barrier OR permeability)` | Polyester articles with barrier properties |
+| `(PLA OR PHB) AND (food packaging)` | Biopolymers for food packaging |
+| `("high oxygen barrier") AND (polyester OR PET)` | Exact phrase + material |
+| `(nanoclay OR graphene) AND (polyester) AND (barrier)` | Nanocomposites with barrier |
+
+**Optional filter:** Add comma-separated terms in the filter field to show only articles whose title + abstract contains at least one of those terms. Useful when the query returns too many irrelevant results.
+
+### Visual Builder
+
+Build queries using groups of terms with a GUI. No boolean syntax needed.
+
+1. **Create groups** - Each group represents a concept (material, property, application)
+2. **Add terms** - Write synonyms inside each group, one per line
+3. **Choose operator** - `AND` (all groups must match) or `OR` (any group matches)
+4. **Preview** - See the generated boolean query in real time
+
+**Example - Nanocomposite search:**
+
+| Group | Terms (one per line) |
+|-------|----------------------|
+| Material | polyester, PET |
+| Nanomaterial | nanoclay, graphene, silica |
+| Property | barrier, permeability |
+
+With `AND` operator, the generated query is:
+
+```
+(polyester OR PET) AND (nanoclay OR graphene OR silica) AND (barrier OR permeability)
+```
+
+**Relevance filter:** When enabled, the system checks that at least 2 of your groups appear in each article's title + abstract. This reduces false positives significantly.
+
+### How Queries Translate to Each API
+
+Each API has its own query syntax. The system translates your query automatically:
+
+| Term | Crossref | PubMed | Elsevier | Semantic Scholar |
+|------|----------|--------|----------|------------------|
+| `polyester` | `polyester*` | `polyester[Title/Abstract]` | `TITLE-ABS-KEY(polyester)` | `polyester` |
+| `"high barrier"` | `"high barrier"` | `"high barrier"[Title/Abstract]` | `TITLE-ABS-KEY("high barrier")` | `"high barrier"` |
+| `PET` | `PET*` | `PET[Title/Abstract]` | `TITLE-ABS-KEY(PET)` | `PET` |
+
 ### Command Line
 
 ```bash

@@ -122,8 +122,8 @@ def plot_level_distribution(df: pd.DataFrame) -> go.Figure:
         "L3": "#3b82f6", "L4": "#ec4899",
     }
     counts = df["level"].value_counts()
-    labels = [level_labels.get(l, l) for l in counts.index]
-    colors = [level_colors.get(l, "#94a3b8") for l in counts.index]
+    labels = [level_labels.get(lvl, lvl) for lvl in counts.index]
+    colors = [level_colors.get(lvl, "#94a3b8") for lvl in counts.index]
 
     fig = px.bar(x=labels, y=counts.values,
                  title="Distribución por Nivel",

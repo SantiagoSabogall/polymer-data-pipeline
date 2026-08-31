@@ -2,8 +2,8 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 
 load_dotenv(
     dotenv_path=Path(__file__).parent / "API_KEY.env",

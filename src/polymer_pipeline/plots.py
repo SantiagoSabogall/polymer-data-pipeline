@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import json
 import base64
 import io
+import json
 import logging
 from collections import Counter
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import pandas as pd
-import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker

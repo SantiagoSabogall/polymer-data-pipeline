@@ -10,10 +10,12 @@ import concurrent.futures
 import json
 import logging
 import sys
+import tempfile
 from pathlib import Path
+from urllib.parse import quote
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 
 def _run_async(coro):
@@ -28,6 +30,7 @@ def _run_async(coro):
             return pool.submit(asyncio.run, coro).result()
     return asyncio.run(coro)
 
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -39,19 +42,23 @@ logging.basicConfig(
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 # Cargar API keys ANTES de importar polymer_pipeline
-# (settings.py evalúa os.getenv() al importar, así que necesita las env vars listas)
 from dotenv import load_dotenv
+
 load_dotenv(
     dotenv_path=Path(__file__).parent / "API_KEY.env",
     override=True,
 )
 
-from polymer_pipeline.settings import load_settings
-from polymer_pipeline.dict import LEVELS, SEARCH_QUERIES, build_boolean_query
-from polymer_pipeline.sources import SOURCES, SOURCE_NAMES
-from polymer_pipeline.core import run_pipeline, filter_articles, compute_quality_metrics
+from polymer_pipeline.core import (
+    compute_quality_metrics,
+    filter_articles,
+    run_pipeline,
+)
+from polymer_pipeline.dict import LEVELS, build_boolean_query
+from polymer_pipeline.export import export_bibtex, export_csv
 from polymer_pipeline.plots_interactive import generate_interactive_plots
-from polymer_pipeline.export import export_csv, export_bibtex
+from polymer_pipeline.settings import load_settings
+from polymer_pipeline.sources import SOURCE_NAMES, SOURCES
 
 load_settings()
 
@@ -71,7 +78,9 @@ def _load_presets() -> dict:
 
 def _save_presets(presets: dict) -> None:
     PRESETS_DIR.mkdir(parents=True, exist_ok=True)
-    PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False), encoding="utf-8")
+    PRESETS_FILE.write_text(
+        json.dumps(presets, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 # ── Page config ────────────────────────────────────────────────────────
@@ -79,14 +88,14 @@ st.set_page_config(
     page_title="SciSearch",
     page_icon="🔎",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown("""
 <style>
-    .block-container { padding-top: 1.5rem !important; }
+    .block-container { padding-top: 1.65rem !important; }
     h1 { margin-top: 0 !important; padding-top: 0 !important; }
-    /* Tabla de resultados */
+    header[data-testid="stHeader"] { display: none; }
     .stDataFrame td, .stDataFrame th {
         font-size: 15px !important;
     }
@@ -98,124 +107,136 @@ st.markdown("""
         font-size: 16px !important;
         font-weight: 600;
     }
-    
-    /* Metricas */
     [data-testid="stMetric"] {
         background-color: #1e293b;
         padding: 10px;
         border-radius: 8px;
     }
-    
-    /* Responsive: sidebar mas angosta en pantallas pequenas */
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] {
             width: 280px !important;
         }
     }
+    .article-detail {
+        background-color: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Sidebar ────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.header("Configuracion del Pipeline")
+st.markdown("""
+<script>
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') {
+        var btn = document.querySelector('button[kind="primary"]');
+        if (btn) btn.click();
+    }
+    if (e.key === 'Escape') {
+        var newBtn = Array.from(document.querySelectorAll('button'))
+            .find(function(b) { return b.innerText.indexOf('Nueva b') !== -1; });
+        if (newBtn) newBtn.click();
+    }
+});
+</script>
+""", unsafe_allow_html=True)
 
-    # ── Gestión de presets guardados ────────────────────────────────────
+# ── Estado de sesión ──────────────────────────────────────────────────
+if "articles" not in st.session_state:
+    st.session_state["articles"] = []
+if "search_mode_used" not in st.session_state:
+    st.session_state["search_mode_used"] = "Presets (L1-L4)"
+
+has_data = len(st.session_state["articles"]) > 0
+
+# ════════════════════════════════════════════════════════════════════════
+#  ESTADO 1: Búsqueda (no hay resultados)
+# ════════════════════════════════════════════════════════════════════════
+if not has_data:
+    st.title("SciSearch")
+
+    # ── Presets guardados ───────────────────────────────────────────
     saved_presets = _load_presets()
+    preset_data = {}
     if saved_presets:
-        st.subheader("Busquedas guardadas")
         preset_names = list(saved_presets.keys())
-        selected_preset = st.selectbox("Cargar:", ["(nueva busqueda)"] + preset_names)
-    else:
-        selected_preset = "(nueva busqueda)"
+        selected_preset = st.selectbox(
+            "Cargar búsqueda guardada:", ["(nueva)"] + preset_names
+        )
+        if selected_preset != "(nueva)":
+            preset_data = saved_presets[selected_preset]
 
-    st.divider()
-
-    # ── Modo de búsqueda ────────────────────────────────────────────────
-    st.subheader("Modo de busqueda")
+    # ── Modo de búsqueda ────────────────────────────────────────────
     search_mode = st.radio(
-        "Seleccionar:",
+        "Modo de búsqueda:",
         ["Presets (L1-L4)", "Busqueda libre", "Constructor visual"],
-        label_visibility="collapsed",
+        horizontal=True,
         key="search_mode",
     )
 
-    # ── Estado inicial desde preset guardado ────────────────────────────
-    preset_data = saved_presets.get(selected_preset, {}) if selected_preset != "(nueva busqueda)" else {}
-
-    # Inicializar variables (se definen en cada modo)
+    # Inicializar variables
     selected_levels = None
     raw_query = None
     builder_groups = None
     bool_operator = "AND"
     custom_filter_groups = None
     use_filter = True
+    filter_input = ""
+    groups = []
 
-    # ── MODO 1: Presets ─────────────────────────────────────────────────
+    # ── MODO 1: Presets ─────────────────────────────────────────────
     if search_mode == "Presets (L1-L4)":
-        st.subheader("Niveles de busqueda")
-        default_levels = preset_data.get("levels", [l["key"] for l in LEVELS])
+        st.subheader("Niveles de búsqueda")
+        default_levels = preset_data.get(
+            "levels", [lvl["key"] for lvl in LEVELS]
+        )
         selected_levels = []
-        for level in LEVELS:
-            if st.checkbox(
-                f"{level['label']} ({level['key']})",
-                value=level["key"] in default_levels,
-                key=f"lvl_{level['key']}",
-            ):
-                selected_levels.append(level["key"])
+        cols = st.columns(2)
+        for i, level in enumerate(LEVELS):
+            with cols[i % 2]:
+                if st.checkbox(
+                    f"{level['label']} ({level['key']})",
+                    value=level["key"] in default_levels,
+                    key=f"lvl_{level['key']}",
+                ):
+                    selected_levels.append(level["key"])
 
-        raw_query = None
-        builder_groups = None
-        bool_operator = "AND"
-
-    # ── MODO 2: Búsqueda libre ──────────────────────────────────────────
+    # ── MODO 2: Búsqueda libre ──────────────────────────────────────
     elif search_mode == "Busqueda libre":
-        st.subheader("Query booleana")
         default_query = preset_data.get(
             "query",
             '(polyester OR PET) AND (barrier OR permeability)',
         )
         raw_query = st.text_area(
-            "Escribe tu consulta:",
+            "Escribe tu consulta booleana:",
             value=default_query,
-            height=120,
+            height=100,
             help="Formato: (termino1 OR termino2) AND (termino3 OR termino4)",
         )
-
-        # Opcional: reglas de filtro
-        st.caption("Reglas de filtro (opcional, separa terminos con coma)")
         filter_input = st.text_input(
-            "Filtrar titulos que contengan:",
+            "Filtrar títulos que contengan (opcional, coma separada):",
             value=preset_data.get("filter_text", ""),
             placeholder="polyester, barrier, film",
         )
-        custom_filter_groups = None
         if filter_input:
             terms = [t.strip() for t in filter_input.split(",") if t.strip()]
             if terms:
                 custom_filter_groups = [terms]
 
-        selected_levels = None
-        builder_groups = None
-        bool_operator = "AND"
-
-    # ── MODO 3: Constructor visual ──────────────────────────────────────
+    # ── MODO 3: Constructor visual ──────────────────────────────────
     else:
-        st.subheader("Constructor de consulta")
-
-        # Cargar grupos desde preset o usar defaults
         default_groups = preset_data.get("groups", [
             {"name": "Grupo 1", "terms": ["polyester", "PET"]},
             {"name": "Grupo 2", "terms": ["barrier", "permeability"]},
         ])
         default_operator = preset_data.get("bool_operator", "AND")
 
-        # Editor de grupos
         if "builder_groups" not in st.session_state:
             st.session_state["builder_groups"] = default_groups
 
         groups = st.session_state["builder_groups"]
 
-        # Operador booleano
         bool_operator = st.radio(
             "Combinar grupos con:",
             ["AND", "OR"],
@@ -223,202 +244,236 @@ with st.sidebar:
             horizontal=True,
         )
 
-        # Renderizar cada grupo
         new_groups = []
         for i, group in enumerate(groups):
             with st.expander(f"Grupo {i+1}: {group['name']}", expanded=True):
-                name = st.text_input("Nombre:", value=group["name"], key=f"gname_{i}")
+                name = st.text_input(
+                    "Nombre:", value=group["name"], key=f"gname_{i}"
+                )
                 terms_str = st.text_area(
-                    "Terminos (uno por linea):",
+                    "Terminos (uno por línea):",
                     value="\n".join(group["terms"]),
                     height=80,
                     key=f"gterms_{i}",
                 )
-                terms = [t.strip() for t in terms_str.split("\n") if t.strip()]
-
+                terms = [
+                    t.strip() for t in terms_str.split("\n") if t.strip()
+                ]
                 col_del, _ = st.columns([1, 4])
                 with col_del:
                     if st.button("Eliminar", key=f"del_{i}"):
-                        pass  # Se elimina abajo
+                        pass
                     else:
                         new_groups.append({"name": name, "terms": terms})
 
-        # Solo mantener los grupos que no fueron eliminados
         groups = [g for g in new_groups if g["terms"]]
 
         col_add, col_preview = st.columns([1, 2])
         with col_add:
             if st.button("Agregar grupo"):
-                groups.append({"name": f"Grupo {len(groups)+1}", "terms": []})
+                groups.append(
+                    {"name": f"Grupo {len(groups)+1}", "terms": []}
+                )
 
-        # Preview de la query generada
         if groups and all(g["terms"] for g in groups):
             generated_query = build_boolean_query(groups, bool_operator)
             with col_preview:
                 st.caption("Query generada:")
                 st.code(generated_query, language=None)
 
-        # Reglas de filtro
-        st.caption("Filtrar titulos que contengan al menos 2 de los grupos:")
         use_filter = st.checkbox("Aplicar filtro de relevancia", value=True)
-
         st.session_state["builder_groups"] = groups
-        raw_query = None
-        builder_groups = groups if all(g["terms"] for g in groups) else None
-        selected_levels = None
+        builder_groups = (
+            groups if all(g["terms"] for g in groups) else None
+        )
 
-    # ── Fuentes (común a todos los modos) ───────────────────────────────
+    # ── Fuentes + Parámetros ────────────────────────────────────────
     st.divider()
-    st.subheader("Fuentes (APIs)")
-    default_sources = preset_data.get("sources", SOURCE_NAMES)
-    selected_sources = []
-    for source_name in SOURCES:
-        if st.checkbox(source_name, value=source_name in default_sources, key=f"src_{source_name}"):
-            selected_sources.append(source_name)
+    col_sources, col_params = st.columns([2, 1])
 
-    # ── Parámetros ──────────────────────────────────────────────────────
-    st.subheader("Parametros")
-    max_results = st.slider(
-        "Resultados por query",
-        min_value=50, max_value=1000,
-        value=preset_data.get("max_results", 250),
-        step=50,
+    with col_sources:
+        st.subheader("Fuentes")
+        default_sources = preset_data.get("sources", SOURCE_NAMES)
+        src_cols = st.columns(2)
+        selected_sources = []
+        for i, source_name in enumerate(SOURCES):
+            with src_cols[i % 2]:
+                if st.checkbox(
+                    source_name,
+                    value=source_name in default_sources,
+                    key=f"src_{source_name}",
+                ):
+                    selected_sources.append(source_name)
+
+    with col_params:
+        st.subheader("Parámetros")
+        max_results = st.slider(
+            "Resultados por query",
+            min_value=50,
+            max_value=1000,
+            value=preset_data.get("max_results", 250),
+            step=50,
+        )
+
+    # ── Guardar preset ──────────────────────────────────────────────
+    with st.expander("Guardar búsqueda actual"):
+        save_cols = st.columns([2, 1])
+        with save_cols[0]:
+            save_name = st.text_input(
+                "Nombre:", placeholder="mi_busqueda", label_visibility="collapsed"
+            )
+        with save_cols[1]:
+            if st.button("Guardar"):
+                if save_name:
+                    preset_config = {
+                        "mode": search_mode,
+                        "sources": selected_sources,
+                        "max_results": max_results,
+                    }
+                    if search_mode == "Presets (L1-L4)":
+                        preset_config["levels"] = selected_levels
+                    elif search_mode == "Busqueda libre":
+                        preset_config["query"] = raw_query or ""
+                        preset_config["filter_text"] = filter_input
+                    elif search_mode == "Constructor visual":
+                        preset_config["groups"] = groups
+                        preset_config["bool_operator"] = bool_operator
+
+                    saved = _load_presets()
+                    saved[save_name] = preset_config
+                    _save_presets(saved)
+                    st.success(f"Guardado: {save_name}")
+                    st.rerun()
+                else:
+                    st.warning("Escribe un nombre")
+
+    # ── Ejecutar Pipeline ───────────────────────────────────────────
+    st.divider()
+    run_clicked = st.button(
+        "Ejecutar Pipeline", type="primary", use_container_width=True
     )
 
-    # ── Guardar preset ──────────────────────────────────────────────────
-    st.divider()
-    with st.expander("Guardar busqueda actual"):
-        save_name = st.text_input("Nombre:", placeholder="mi_busqueda")
-        if st.button("Guardar", width="stretch"):
-            if save_name:
-                preset_config = {
-                    "mode": search_mode,
-                    "sources": selected_sources,
-                    "max_results": max_results,
-                }
-                if search_mode == "Presets (L1-L4)":
-                    preset_config["levels"] = selected_levels
-                elif search_mode == "Busqueda libre":
-                    preset_config["query"] = raw_query or ""
-                    preset_config["filter_text"] = filter_input if 'filter_input' in dir() else ""
-                elif search_mode == "Constructor visual":
-                    preset_config["groups"] = groups if 'groups' in dir() else []
-                    preset_config["bool_operator"] = bool_operator
+    if run_clicked:
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-                saved = _load_presets()
-                saved[save_name] = preset_config
-                _save_presets(saved)
-                st.success(f"Guardado: {save_name}")
-                st.rerun()
+        def update_progress(current: int, total: int, source: str) -> None:
+            progress_bar.progress(
+                current / total,
+                text=f"[{current}/{total}] Consultando {source}...",
+            )
+
+        custom_queries = None
+        custom_filter_rules = None
+
+        if search_mode == "Busqueda libre" and raw_query:
+            custom_queries = {"custom": [raw_query]}
+            if custom_filter_groups:
+                custom_filter_rules = {"custom": custom_filter_groups}
             else:
-                st.warning("Escribe un nombre")
+                custom_filter_rules = {"custom": []}
 
-    # ── Botón de ejecución ──────────────────────────────────────────────
-    st.divider()
-    run_clicked = st.button("Ejecutar Pipeline", type="primary", width="stretch")
+        elif search_mode == "Constructor visual":
+            if builder_groups and all(
+                g.get("terms") for g in builder_groups
+            ):
+                generated_query = build_boolean_query(
+                    builder_groups, bool_operator
+                )
+                custom_queries = {"custom": [generated_query]}
+                if use_filter:
+                    custom_filter_rules = {
+                        "custom": [g["terms"] for g in builder_groups]
+                    }
+                else:
+                    custom_filter_rules = {"custom": []}
 
-    # ── Filtros de visualización ────────────────────────────────────────
-    st.divider()
-    st.header("Filtros de visualizacion")
-    search_filter = st.text_input("Buscar en resultados:", placeholder="titulo, autor, DOI...")
-    year_range = st.slider("Rango de anios", 1990, 2026, (2015, 2026))
-    filter_by_source = st.multiselect("Filtrar por fuente:", SOURCE_NAMES, default=SOURCE_NAMES)
-    available_levels = ["L1", "L2", "L3", "L4"] if search_mode == "Presets (L1-L4)" else ["custom"]
+        with st.spinner(
+            "Consultando APIs científicas... Esto puede tomar 30-60 segundos."
+        ):
+            try:
+                articles = _run_async(run_pipeline(
+                    levels=(
+                        None
+                        if custom_queries
+                        else (
+                            selected_levels
+                            or [lvl["key"] for lvl in LEVELS]
+                        )
+                    ),
+                    sources=selected_sources,
+                    max_results=max_results,
+                    progress_callback=update_progress,
+                    custom_queries=custom_queries,
+                    custom_filter_rules=custom_filter_rules,
+                ))
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg or "rate" in error_msg.lower():
+                    st.error(
+                        "Error: Límite de velocidad alcanzado. "
+                        "Reduce fuentes o resultados."
+                    )
+                elif (
+                    "timeout" in error_msg.lower()
+                    or "timed out" in error_msg.lower()
+                ):
+                    st.error(
+                        "Error: Tiempo de espera agotado. Intenta de nuevo."
+                    )
+                elif (
+                    "connection" in error_msg.lower()
+                    or "connect" in error_msg.lower()
+                ):
+                    st.error(
+                        "Error: No se pudo conectar a la API."
+                    )
+                else:
+                    st.error(f"Error en el pipeline: {error_msg[:200]}")
+                articles = []
+
+        progress_bar.empty()
+        status_text.empty()
+
+        st.session_state["articles"] = articles
+        st.session_state["search_mode_used"] = search_mode
+        st.rerun()
+
+    st.stop()
+
+# ════════════════════════════════════════════════════════════════════════
+#  ESTADO 2: Resultados (sidebar con filtros + contenido principal)
+# ════════════════════════════════════════════════════════════════════════
+articles = st.session_state["articles"]
+search_mode = st.session_state.get("search_mode_used", "Presets (L1-L4)")
+
+# ── Sidebar: filtros de visualización ──────────────────────────────────
+with st.sidebar:
+    st.header("Filtros de visualización")
+    search_filter = st.text_input(
+        "Buscar en resultados:", placeholder="título, autor, DOI..."
+    )
+    year_range = st.slider("Rango de años", 1990, 2026, (2015, 2026))
+    filter_by_source = st.multiselect(
+        "Filtrar por fuente:", SOURCE_NAMES, default=SOURCE_NAMES
+    )
+    available_levels = (
+        ["L1", "L2", "L3", "L4"]
+        if search_mode == "Presets (L1-L4)"
+        else ["custom"]
+    )
     filter_by_level = st.multiselect(
-        "Filtrar por nivel:",
-        available_levels,
-        default=available_levels,
+        "Filtrar por nivel:", available_levels, default=available_levels
     )
 
 # ── Main content ───────────────────────────────────────────────────────
 st.title("SciSearch")
-st.caption("Dashboard de articulos cientificos consolidados y deduplicados")
 
-# ── Ejecutar pipeline ──────────────────────────────────────────────────
-if run_clicked:
-    # Barra de progreso y spinner
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+if st.button("Nueva búsqueda", use_container_width=True):
+    st.session_state["articles"] = []
+    st.rerun()
 
-    def update_progress(current: int, total: int, source: str) -> None:
-        progress_bar.progress(current / total, text=f"[{current}/{total}] Consultando {source}...")
-
-    # Determinar qué ejecutar según el modo
-    custom_queries = None
-    custom_filter_rules = None
-
-    logging.info(f"[DEBUG] search_mode={search_mode}")
-    logging.info(f"[DEBUG] raw_query={raw_query}")
-    logging.info(f"[DEBUG] builder_groups={builder_groups}")
-
-    if search_mode == "Busqueda libre" and raw_query:
-        custom_queries = {"custom": [raw_query]}
-        if custom_filter_groups:
-            custom_filter_rules = {"custom": custom_filter_groups}
-        else:
-            custom_filter_rules = {"custom": []}
-        logging.info(f"[DEBUG] Modo busqueda libre: custom_queries={custom_queries}")
-
-    elif search_mode == "Constructor visual":
-        if builder_groups and all(g.get("terms") for g in builder_groups):
-            generated_query = build_boolean_query(builder_groups, bool_operator)
-            custom_queries = {"custom": [generated_query]}
-            if use_filter:
-                custom_filter_rules = {"custom": [g["terms"] for g in builder_groups]}
-            else:
-                custom_filter_rules = {"custom": []}
-            logging.info(f"[DEBUG] Modo builder: query={generated_query}")
-        else:
-            logging.warning("[DEBUG] Builder: no groups with terms")
-
-    else:
-        logging.info(f"[DEBUG] Modo presets: levels={selected_levels}")
-
-    logging.info(f"[DEBUG] custom_queries={custom_queries}")
-    logging.info(f"[DEBUG] custom_filter_rules={custom_filter_rules}")
-
-    # Ejecutar con spinner
-    with st.spinner("Consultando APIs cientificas... Esto puede tomar 30-60 segundos."):
-        try:
-            articles = _run_async(run_pipeline(
-                levels=None if custom_queries else (selected_levels or [l["key"] for l in LEVELS]),
-                sources=selected_sources,
-                max_results=max_results,
-                progress_callback=update_progress,
-                custom_queries=custom_queries,
-                custom_filter_rules=custom_filter_rules,
-            ))
-            logging.info(f"[DEBUG] Pipeline returned {len(articles)} articles")
-        except Exception as e:
-            logging.error(f"[DEBUG] Pipeline error: {e}")
-            error_msg = str(e)
-            if "429" in error_msg or "rate" in error_msg.lower():
-                st.error("Error: Limite de velocidad alcanzado. Intenta con menos fuentes o reduce maximo de resultados.")
-            elif "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
-                st.error("Error: Tiempo de espera agotado. La API no respondio a tiempo. Intenta de nuevo.")
-            elif "connection" in error_msg.lower() or "connect" in error_msg.lower():
-                st.error("Error: No se pudo conectar a la API. Verifica tu conexion a internet.")
-            else:
-                st.error(f"Error en el pipeline: {error_msg[:200]}")
-            articles = []
-
-    progress_bar.empty()
-    status_text.empty()
-
-    st.session_state["articles"] = articles
-    st.session_state["ran"] = True
-    st.success(f"Pipeline completado: {len(articles)} articulos obtenidos")
-
-# ── Cargar artículos ───────────────────────────────────────────────────
-articles = st.session_state.get("articles", [])
-has_data = len(articles) > 0
-
-if not has_data:
-    st.info("Configura los parametros y haz clic en **Ejecutar Pipeline** para comenzar.")
-    st.stop()
-
-# ── Aplicar filtros de visualización ───────────────────────────────────
-# Si es query custom, no filtrar por level (los artículos tienen level="custom")
+# ── Aplicar filtros ────────────────────────────────────────────────────
 effective_levels = None
 if search_mode == "Presets (L1-L4)":
     effective_levels = filter_by_level
@@ -433,177 +488,217 @@ filtered = filter_articles(
 
 # ── Métricas ───────────────────────────────────────────────────────────
 st.subheader("Resumen")
-
 metrics = compute_quality_metrics(filtered)
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Total", metrics["total"])
-c2.metric("Con DOI", f"{metrics['with_doi']}", f"{metrics['with_doi']/max(metrics['total'],1)*100:.0f}%")
-c3.metric("Con Abstract", f"{metrics['with_abstract']}", f"{metrics['with_abstract']/max(metrics['total'],1)*100:.0f}%")
-c4.metric("Con PDF", f"{metrics['with_pdf']}", f"{metrics['with_pdf']/max(metrics['total'],1)*100:.0f}%")
-c5.metric("Autor Desc.", f"{metrics['unknown_author']}", f"{metrics['unknown_author']/max(metrics['total'],1)*100:.0f}%")
 
 
+def _pct(v: int) -> str:
+    return f"{v / max(metrics['total'], 1) * 100:.0f}%"
 
-# ── Tabla de resultados ────────────────────────────────────────────────
+
+c2.metric("Con DOI", metrics["with_doi"], _pct(metrics["with_doi"]))
+c3.metric(
+    "Con Abstract", metrics["with_abstract"], _pct(metrics["with_abstract"])
+)
+c4.metric("Con PDF", metrics["with_pdf"], _pct(metrics["with_pdf"]))
+c5.metric(
+    "Autor Desc.",
+    metrics["unknown_author"],
+    _pct(metrics["unknown_author"]),
+)
+
+# ── Tabla de resultados + Detalle ──────────────────────────────────────
 st.subheader(f"Resultados ({len(filtered)} artículos)")
 
 display_df = pd.DataFrame(filtered)
 if not display_df.empty:
-    display_cols = ["level", "title", "author", "journal", "year", "source", "doi"]
-    display_df = display_df[[c for c in display_cols if c in display_df.columns]]
+    display_cols = [
+        "level", "title", "author", "journal", "year", "source", "doi",
+    ]
+    display_df = display_df[
+        [c for c in display_cols if c in display_df.columns]
+    ]
 
-    event = st.dataframe(
-        display_df,
-        width="stretch",
-        column_config={
-            "level": st.column_config.TextColumn("Nivel", width="small"),
-            "title": st.column_config.TextColumn("Título", width="large"),
-            "doi": st.column_config.LinkColumn("DOI", display_text="link"),
-        },
-        height=400,
-        selection_mode="multi-row",
-        on_select="rerun",
-        key="results_table",
-    )
+    # Detectar si ya hay una selección previa en session_state
+    _prev = st.session_state.get("results_table")
+    _has_sel = False
+    if _prev is not None and hasattr(_prev, "selection"):
+        _has_sel = bool(_prev.selection and _prev.selection.rows)
 
-    # ── Artículos seleccionados ──────────────────────────────────────────
+    if _has_sel:
+        col_table, col_detail = st.columns([3, 1])
+    else:
+        col_table = st.container()
+        col_detail = None
+
+    with col_table:
+        event = st.dataframe(
+            display_df,
+            width="stretch",
+            column_config={
+                "level": st.column_config.TextColumn(
+                    "Nivel", width="small"
+                ),
+                "title": st.column_config.TextColumn(
+                    "Título", width="large"
+                ),
+                "doi": st.column_config.LinkColumn(
+                    "DOI", display_text="link"
+                ),
+            },
+            height=400,
+            selection_mode="multi-row",
+            on_select="rerun",
+            key="results_table",
+        )
+
+    # ── Detalle del artículo seleccionado (columna derecha) ──────────
     selected_rows = event.selection.rows if event.selection else []
-    if selected_rows:
-        selected_articles = [filtered[i] for i in selected_rows]
-        st.info(f"{len(selected_articles)} artículos seleccionados")
 
-        # Exportar seleccionados
-        col_sel1, col_sel2, col_sel3 = st.columns(3)
-        with col_sel1:
-            sel_csv = pd.DataFrame(selected_articles).to_csv(index=False)
+    if col_detail is not None and selected_rows:
+        with col_detail:
+            selected_articles = [filtered[i] for i in selected_rows]
+            article = selected_articles[0]
+
+            st.markdown(
+                '<div class="article-detail">',
+                unsafe_allow_html=True,
+            )
+
+            st.markdown(
+                f"**{article.get('title', 'Sin título')}**"
+            )
+
+            info_md = (
+                f"- **Autor:** {article.get('author', 'Desconocido')}\n"
+                f"- **Año:** {article.get('year', 'N/A')}\n"
+                f"- **Revista:** "
+                f"{article.get('journal', 'No disponible')}\n"
+                f"- **Fuente:** {article.get('source', 'N/A')}\n"
+                f"- **Nivel:** {article.get('level', 'N/A')}"
+            )
+            st.markdown(info_md)
+
+            doi = article.get("doi", "")
+            if doi:
+                st.link_button(
+                    "Abrir DOI",
+                    url=f"https://doi.org/{doi}",
+                    use_container_width=True,
+                )
+
+            pdf_url = article.get("pdf_url", "")
+            if pdf_url:
+                st.link_button(
+                    "Descargar PDF",
+                    url=pdf_url,
+                    use_container_width=True,
+                )
+
+            if doi:
+                st.link_button(
+                    "Google Scholar",
+                    url=(
+                        "https://scholar.google.com/scholar?q={doi}"
+                    ),
+                    use_container_width=True,
+                )
+            if article.get("title"):
+                st.link_button(
+                    "Semantic Scholar",
+                    url=(
+                        "https://www.semanticscholar.org/search?q="
+                        f"{quote(article['title'])}"
+                    ),
+                    use_container_width=True,
+                )
+
+            abstract = article.get("abstract", "")
+            if abstract:
+                with st.expander("Abstract", expanded=False):
+                    st.markdown(abstract)
+
+            if len(selected_articles) > 1:
+                st.caption(
+                    f"+{len(selected_articles) - 1} artículos más "
+                    f"seleccionados"
+                )
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    elif col_detail is not None and not selected_rows:
+        with col_detail:
+            st.markdown(
+                '<div class="article-detail" style="opacity:0.5;">'
+                "<p>Selecciona un artículo para ver sus detalles.</p>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
+
+    # ── Exportar seleccionados (debajo de la tabla) ──────────────────
+    if selected_rows:
+        sel_articles = [filtered[i] for i in selected_rows]
+        exp_cols = st.columns(3)
+        with exp_cols[0]:
+            sel_csv = pd.DataFrame(sel_articles).to_csv(index=False)
             st.download_button(
-                "Exportar seleccionados (CSV)",
+                "CSV seleccionados",
                 data=sel_csv,
                 file_name="selected_articles.csv",
                 mime="text/csv",
                 key="export_selected_csv",
             )
-        with col_sel2:
-            from polymer_pipeline.export import export_bibtex as _export_bib
-            import tempfile
-            from pathlib import Path
-            with tempfile.NamedTemporaryFile(suffix=".bib", delete=False) as tmp:
-                _export_bib(selected_articles, filepath=tmp.name)
+        with exp_cols[1]:
+            from polymer_pipeline.export import (
+                export_bibtex as _export_bib,
+            )
+
+            with tempfile.NamedTemporaryFile(
+                suffix=".bib", delete=False
+            ) as tmp:
+                _export_bib(sel_articles, filepath=tmp.name)
                 bib_content = Path(tmp.name).read_text()
             st.download_button(
-                "Exportar seleccionados (BibTeX)",
+                "BibTeX seleccionados",
                 data=bib_content,
                 file_name="selected_articles.bib",
                 mime="application/x-bibtex",
                 key="export_selected_bib",
             )
-        with col_sel3:
-            sel_json = json.dumps(selected_articles, indent=2, ensure_ascii=False)
+        with exp_cols[2]:
+            sel_json = json.dumps(
+                sel_articles, indent=2, ensure_ascii=False
+            )
             st.download_button(
-                "Exportar seleccionados (JSON)",
+                "JSON seleccionados",
                 data=sel_json,
                 file_name="selected_articles.json",
                 mime="application/json",
                 key="export_selected_json",
             )
 
-        # Detalle del primer artículo seleccionado (si hay 1 o más)
-        if len(selected_articles) == 1:
-            article = selected_articles[0]
-        elif len(selected_articles) > 1:
-            st.markdown("**Detalle del primer artículo seleccionado:**")
-            article = selected_articles[0]
-        else:
-            article = None
-
-        if article:
-            st.divider()
-            st.subheader("Detalle del artículo")
-
-            col_main, col_side = st.columns([3, 1])
-
-            with col_main:
-                st.markdown(f"### {article.get('title', 'Sin título')}")
-
-                info_cols = st.columns(3)
-                with info_cols[0]:
-                    st.markdown(f"**Autor:** {article.get('author', 'Desconocido')}")
-                    st.markdown(f"**Año:** {article.get('year', 'N/A')}")
-                with info_cols[1]:
-                    st.markdown(f"**Revista:** {article.get('journal', 'No disponible')}")
-                    st.markdown(f"**Fuente:** {article.get('source', 'N/A')}")
-                with info_cols[2]:
-                    st.markdown(f"**Nivel:** {article.get('level', 'N/A')}")
-
-                abstract = article.get("abstract", "")
-                if abstract:
-                    with st.expander("Abstract", expanded=True):
-                        st.markdown(abstract)
-                else:
-                    st.info("No hay abstract disponible para este artículo.")
-
-            with col_side:
-                st.markdown("### Enlaces")
-
-                doi = article.get("doi", "")
-                if doi:
-                    st.link_button(
-                        "Abrir DOI",
-                        url=f"https://doi.org/{doi}",
-                        width="stretch",
-                    )
-
-                pdf_url = article.get("pdf_url", "")
-                if pdf_url:
-                    st.link_button(
-                        "Descargar PDF",
-                        url=pdf_url,
-                        width="stretch",
-                    )
-                else:
-                    st.button("Sin PDF disponible", disabled=True, width="stretch")
-
-            # Scholar
-            if doi:
-                st.link_button(
-                    "Google Scholar",
-                    url=f"https://scholar.google.com/scholar?q={doi}",
-                    width="stretch",
-                )
-
-            # Semantic Scholar
-            if article.get("title"):
-                from urllib.parse import quote
-                st.link_button(
-                    "Semantic Scholar",
-                    url=f"https://www.semanticscholar.org/search?q={quote(article['title'])}",
-                    width="stretch",
-                )
-
-
-
 # ── Gráficas ───────────────────────────────────────────────────────────
-st.subheader("Analisis Visual")
+st.subheader("Análisis Visual")
 
-with st.spinner("Generando graficas..."):
+with st.spinner("Generando gráficas..."):
     plots = generate_interactive_plots(filtered)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Por Anio", "Revistas", "Keywords", "Fuentes", "Niveles"])
-
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["Por Año", "Revistas", "Keywords", "Fuentes", "Niveles"]
+)
 with tab1:
-    st.plotly_chart(plots["year"], width="stretch")
+    st.plotly_chart(plots["year"], use_container_width=True)
 with tab2:
-    st.plotly_chart(plots["journals"], width="stretch")
+    st.plotly_chart(plots["journals"], use_container_width=True)
 with tab3:
-    st.plotly_chart(plots["keywords"], width="stretch")
+    st.plotly_chart(plots["keywords"], use_container_width=True)
 with tab4:
-    st.plotly_chart(plots["sources"], width="stretch")
+    st.plotly_chart(plots["sources"], use_container_width=True)
 with tab5:
-    st.plotly_chart(plots["levels"], width="stretch")
+    st.plotly_chart(plots["levels"], use_container_width=True)
 
-    
-
-# Exportar todos los resultados
+# ── Exportar todos ─────────────────────────────────────────────────────
 st.divider()
 st.subheader("Exportar todos los resultados")
 col_exp1, col_exp2, col_exp3 = st.columns(3)

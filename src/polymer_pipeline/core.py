@@ -23,7 +23,7 @@ from polymer_pipeline.fetchers import (
     fetch_springer,
 )
 from polymer_pipeline.filters import passes_filter
-from polymer_pipeline.query_builder import PRESERVE_QUOTES, TITLE_ABS_ONLY  # noqa: F401
+from polymer_pipeline.query_builder import PRESERVE_QUOTES  # noqa: F401
 from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY
 
 logger = logging.getLogger(__name__)
@@ -34,17 +34,22 @@ _FETCHER_MAP: dict[str, tuple[Callable, tuple, dict]] = {
     "Crossref":        (fetch_crossref,        (),    {}),
     "Springer":        (fetch_springer,        (),    {}),
     "Elsevier":        (fetch_elsevier,        (),    {}),
-    "PubMed":          (fetch_pubmed,          (),    {"max_results": TOTAL_RESULTS_PER_QUERY}),
-    "OpenAlex":        (fetch_openalex,        (),    {"max_results": TOTAL_RESULTS_PER_QUERY}),
-    "MDPI":            (fetch_mdpi,            (),    {"max_results": TOTAL_RESULTS_PER_QUERY}),
-    "SemanticScholar": (fetch_semantic_scholar, (),   {"max_results": TOTAL_RESULTS_PER_QUERY}),
-    "Lens":            (fetch_lens,            (),    {"max_results": TOTAL_RESULTS_PER_QUERY}),
+    "PubMed":          (fetch_pubmed,          (),    {}),
+    "OpenAlex":        (fetch_openalex,        (),    {}),
+    "MDPI":            (fetch_mdpi,            (),    {}),
+    "SemanticScholar": (fetch_semantic_scholar, (),   {}),
+    "Lens":            (fetch_lens,            (),    {}),
 }
+
+_FETCHERS_WITH_MAX_RESULTS = {"PubMed", "OpenAlex", "MDPI", "SemanticScholar", "Lens"}
+_FETCHERS_WITH_TITLE_ABS_ONLY = {"Crossref", "OpenAlex", "MDPI"}
 
 
 def _build_fetcher_specs(
     query: str,
     sources: list[str] | None = None,
+    max_results: int = TOTAL_RESULTS_PER_QUERY,
+    title_abs_only: bool = False,
 ) -> list[tuple[Callable, tuple, dict]]:
     """Devuelve las specs (fn, args, kwargs) de los fetchers solicitados."""
     specs = []
@@ -53,7 +58,12 @@ def _build_fetcher_specs(
             continue
         if name == "SemanticScholar" and not ENABLE_SEMANTIC_SCHOLAR:
             continue
-        specs.append((fn, (query,) + args, kwargs))
+        final_kwargs = dict(kwargs)
+        if name in _FETCHERS_WITH_MAX_RESULTS:
+            final_kwargs["max_results"] = max_results
+        if name in _FETCHERS_WITH_TITLE_ABS_ONLY:
+            final_kwargs["title_abs_only"] = title_abs_only
+        specs.append((fn, (query,) + args, final_kwargs))
     return specs
 
 
@@ -107,6 +117,7 @@ def _dedupe(
     results_by_query: dict,
     queries: dict[str, list[str]],
     filter_rules: dict[str, list[list[str]]] | None = None,
+    title_abs_only: bool = False,
 ) -> list[dict]:
     """Filtra y deduplica artículos de las queries dadas."""
     seen_dois: set[str] = set()
@@ -120,7 +131,7 @@ def _dedupe(
                 combined_raw.extend(result["articles"])
 
             for art in combined_raw:
-                if not passes_filter(art, level, filter_rules):
+                if not passes_filter(art, level, filter_rules, title_abs_only=title_abs_only):
                     continue
 
                 doi = art.get("doi", "")
@@ -159,20 +170,19 @@ async def run_pipeline(
     Returns:
         Lista de artículos normalizados, filtrados y deduplicados.
     """
-    global PRESERVE_QUOTES, TITLE_ABS_ONLY
+    global PRESERVE_QUOTES
+
+    title_abs_only = bool(custom_queries)
 
     if custom_queries:
         queries = custom_queries
         PRESERVE_QUOTES = True
-        TITLE_ABS_ONLY = True
     elif levels:
         queries = {k: v for k, v in SEARCH_QUERIES.items() if k in levels}
         PRESERVE_QUOTES = False
-        TITLE_ABS_ONLY = False
     else:
         queries = dict(SEARCH_QUERIES)
         PRESERVE_QUOTES = False
-        TITLE_ABS_ONLY = False
 
     if custom_filter_rules is not None:
         filter_rules = custom_filter_rules
@@ -182,16 +192,14 @@ async def run_pipeline(
             if level not in filter_rules:
                 filter_rules[level] = []
 
-    if TITLE_ABS_ONLY and custom_queries:
+    if title_abs_only and custom_queries:
         from polymer_pipeline.query_builder import parse_boolean_query
 
         for lvl, qs in queries.items():
             if lvl not in filter_rules or not filter_rules[lvl]:
-                # Generar reglas desde la query misma (título o abstract debe contener el término)
                 combined_groups: list[list[str]] = []
                 for q in qs:
                     groups = parse_boolean_query(q)
-                    # parse respeta PRESERVE_QUOTES, limpiar comillas para el filtro
                     for g in groups:
                         cleaned = [t.strip('"').strip("'") for t in g if t.strip('"').strip("'")]
                         if cleaned:
@@ -200,14 +208,15 @@ async def run_pipeline(
                     filter_rules[lvl] = combined_groups
                 elif qs and qs[0].strip():
                     raw = qs[0].strip().strip('"').strip("'")
-                    # free text sin AND, ej "Andromeda"
                     if raw and " AND " not in qs[0] and " OR " not in qs[0]:
                         filter_rules[lvl] = [[raw]]
 
     tasks: list[tuple] = []
     for level, level_queries in queries.items():
         for q in level_queries:
-            for fn, args, kwargs in _build_fetcher_specs(q, sources):
+            for fn, args, kwargs in _build_fetcher_specs(
+                q, sources, max_results, title_abs_only,
+            ):
                 tasks.append((level, q, fn, args, kwargs))
 
     logger.info("[Pipeline] %d tareas a ejecutar", len(tasks))
@@ -215,9 +224,8 @@ async def run_pipeline(
     results_by_query = await _collect(tasks, progress_callback)
 
     PRESERVE_QUOTES = False
-    TITLE_ABS_ONLY = False
 
-    articles = _dedupe(results_by_query, queries, filter_rules)
+    articles = _dedupe(results_by_query, queries, filter_rules, title_abs_only=title_abs_only)
     logger.info("[Pipeline] %d artículos únicos después de filtrado", len(articles))
 
     return articles

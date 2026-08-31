@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import re
+
 from polymer_pipeline.dict import (
-    LEVEL_FILTER_RULES,
-    POLYESTER_TERMS,
-    BIOPOLYMER_TERMS,
-    PACKAGING_TERMS,
-    BARRIER_TERMS,
-    BLEND_TERMS,
     ADDITIVE_TERMS,
+    BARRIER_TERMS,
+    BIOPOLYMER_TERMS,
+    BLEND_TERMS,
+    LEVEL_FILTER_RULES,
+    PACKAGING_TERMS,
+    POLYESTER_TERMS,
 )
 from polymer_pipeline.sources import SOURCES_WITH_BUILTIN_FILTER
 
@@ -65,6 +66,7 @@ def passes_filter(
     article: dict,
     level: str,
     custom_rules: dict[str, list[list[str]]] | None = None,
+    title_abs_only: bool = False,
 ) -> bool:
     """Verifica si un artículo pasa el filtro de relevancia para un nivel.
 
@@ -73,16 +75,15 @@ def passes_filter(
         level: Identificador del nivel (L1-L4 o "custom").
         custom_rules: Reglas de filtro personalizadas {level: [groups]}.
                       Si se provee, tiene prioridad sobre LEVEL_FILTER_RULES.
+        title_abs_only: Si True, busca en título+abstract (modo búsqueda libre).
     """
     title = article.get("title", "")
     if not title or title == "Sin título":
         return False
 
-    from polymer_pipeline.query_builder import TITLE_ABS_ONLY
-
     source = article.get("source", "")
 
-    if TITLE_ABS_ONLY and level == "custom":
+    if title_abs_only and level == "custom":
         if source == "SemanticScholar":
             return True
         combined = f"{title} {article.get('abstract') or ''}"
@@ -120,4 +121,6 @@ def passes_filter(
         return matches >= 2
 
     # Fallback genérico para niveles sin reglas definidas (solo preset L1-L4)
-    return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)
+    mat = contains_any_term(title, _FALLBACK_MATERIAL)
+    prop = contains_any_term(title, _FALLBACK_PROPERTY)
+    return mat and prop

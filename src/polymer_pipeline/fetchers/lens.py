@@ -5,13 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 
-import aiohttp
-
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.settings import LENS_API_KEY
-from polymer_pipeline.query_builder import build_lens_query
 from polymer_pipeline.http import make_session, request_with_retry
+from polymer_pipeline.query_builder import build_lens_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import LENS_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +77,10 @@ async def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
                             logger.warning("[Lens] Reintentos agotados. Abortando.")
                             break
                         retry_after = int(resp.headers.get("x-rate-limit-retry-after-seconds", 10))
-                        logger.info("[Lens] 429. Esperando %ds (intento %d/%d).", retry_after, retries, max_retries)
+                        logger.info(
+                            "[Lens] 429. Esperando %ds (intento %d/%d).",
+                            retry_after, retries, max_retries,
+                        )
                         await asyncio.sleep(retry_after)
                         continue
 
@@ -110,7 +111,9 @@ async def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
                         if authors:
                             first = authors[0]
                             if isinstance(first, dict):
-                                author = f"{first.get('first_name', '')} {first.get('last_name', '')}".strip()
+                                fname = first.get('first_name', '')
+                                lname = first.get('last_name', '')
+                                author = f"{fname} {lname}".strip()
                             elif isinstance(first, str):
                                 author = first
                             if not author:
@@ -122,7 +125,8 @@ async def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
                         else:
                             journal = str(source) if source else "No disponible"
 
-                        year = str(doc.get("year_published", "")) if doc.get("year_published") else ""
+                        yp = doc.get("year_published")
+                        year = str(yp) if yp else ""
 
                         external_ids = doc.get("external_ids") or []
                         doi = ""

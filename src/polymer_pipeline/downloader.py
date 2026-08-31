@@ -20,8 +20,6 @@ from urllib.parse import urlparse
 
 import requests
 
-from polymer_pipeline.http import make_session
-
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -103,7 +101,7 @@ class ArticleDownloader:
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.rate_limiter = rate_limiter or DownloadRateLimiter()
-        self.session = make_session()
+        self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "polymer-pipeline/1.0 (PDF-downloader)",
             "Accept": "application/pdf, */*;q=0.1",
