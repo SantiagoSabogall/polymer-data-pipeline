@@ -24,11 +24,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-# Variables de módulo para controlar búsquedas libres.
-# Se establecen antes de ejecutar fetchers y se restauran después.
-PRESERVE_QUOTES: bool = False
-TITLE_ABS_ONLY: bool = False
-
 #: Función que, dado un término limpio, devuelve su representación para un API.
 TermFn = Callable[[str], str]
 
@@ -110,7 +105,7 @@ def _europepmc_term(term: str) -> str:
     return f'TITLE_ABS:"{term}"' if " " in term else f"TITLE_ABS:{term}"
 
 
-def parse_boolean_query(query: str) -> list[list[str]]:
+def parse_boolean_query(query: str, preserve_quotes: bool = False) -> list[list[str]]:
     """Convierte una consulta booleana genérica en grupos de términos limpios.
 
     Formato soportado (el que genera ``dict.py``)::
@@ -121,38 +116,38 @@ def parse_boolean_query(query: str) -> list[list[str]]:
     tiene el formato esperado devuelve una lista vacía y quien llame degrada
     elegantemente.
 
-    Si ``PRESERVE_QUOTES`` es True, conserva las comillas de los términos
+    Si ``preserve_quotes`` es True, conserva las comillas de los términos
     (útil para búsquedas libres donde el usuario indica coincidencia exacta).
     """
     if not query or not isinstance(query, str):
         return []
     groups: list[list[str]] = []
     for part in query.split(" AND "):
-        group = _clean_group(part)
+        group = _clean_group(part, preserve_quotes)
         if group:
             groups.append(group)
     return groups
 
 
-def _clean_group(part: str) -> list[str]:
+def _clean_group(part: str, preserve_quotes: bool = False) -> list[str]:
     """Limpia un grupo "(t1 OR t2 OR ...)" a una lista de términos."""
     part = part.strip()
     if part.startswith("(") and part.endswith(")"):
         part = part[1:-1]
-    if PRESERVE_QUOTES:
+    if preserve_quotes:
         terms = [term.strip() for term in part.split(" OR ")]
     else:
         terms = [term.strip().strip('"') for term in part.split(" OR ")]
     return [term for term in terms if term]
 
 
-def _render_boolean(query: str, term_fn: TermFn) -> str:
+def _render_boolean(query: str, term_fn: TermFn, preserve_quotes: bool = False) -> str:
     """Renderiza cada grupo con ``term_fn`` y une los grupos con ``AND``.
 
     Si la consulta no es parseable, devuelve la entrada intacta (degradación
     elegante, nunca una consulta vacía o inválida).
     """
-    groups = parse_boolean_query(query)
+    groups = parse_boolean_query(query, preserve_quotes)
     if not groups:
         return query
     rendered: list[str] = []
@@ -161,72 +156,72 @@ def _render_boolean(query: str, term_fn: TermFn) -> str:
     return " AND ".join(rendered)
 
 
-def build_crossref_query(query: str) -> str:
+def build_crossref_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis Crossref (wildcards)."""
-    return _render_boolean(query, _crossref_term)
+    return _render_boolean(query, _crossref_term, preserve_quotes)
 
 
-def build_openalex_query(query: str) -> str:
+def build_openalex_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis OpenAlex (sin wildcards).
 
     OpenAlex no soporta wildcards dentro de frases; se degradan eliminándolos.
     La salida nunca produce HTTP 400 (parentesís equilibrados, sin ``*``).
     """
-    return _render_boolean(query, _openalex_term)
+    return _render_boolean(query, _openalex_term, preserve_quotes)
 
 
-def build_pubmed_query(query: str) -> str:
+def build_pubmed_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis PubMed (Title/Abstract)."""
-    return _render_boolean(query, _pubmed_term)
+    return _render_boolean(query, _pubmed_term, preserve_quotes)
 
 
-def build_springer_query(query: str) -> str:
+def build_springer_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis booleana compatible con Springer."""
-    return _render_boolean(query, _springer_term)
+    return _render_boolean(query, _springer_term, preserve_quotes)
 
 
-def build_elsevier_query(query: str) -> str:
+def build_elsevier_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis Scopus/ScienceDirect."""
-    return _render_boolean(query, _elsevier_term)
+    return _render_boolean(query, _elsevier_term, preserve_quotes)
 
 
-def _render_s2(query: str, term_fn: TermFn) -> str:
+def _render_s2(query: str, term_fn: TermFn, preserve_quotes: bool = False) -> str:
     """Renderiza grupos con ``term_fn`` usando la sintaxis nativa de Semantic Scholar.
 
     Semantic Scholar no usa las palabras AND/OR/NOT: los grupos se unen con
     ``+`` (AND), los términos dentro del grupo con ``|`` (OR) y las frases
     quedan entrecomilladas. Ejemplo: ``(a | "b c") + (d | e)``.
     """
-    groups = parse_boolean_query(query)
+    groups = parse_boolean_query(query, preserve_quotes)
     if not groups:
         return query
     rendered = ["(" + " | ".join(term_fn(term) for term in group) + ")" for group in groups]
     return " + ".join(rendered)
 
 
-def build_semanticscholar_query(query: str) -> str:
+def build_semanticscholar_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis de Semantic Scholar.
 
     Válida tanto para ``/paper/search`` como para ``/paper/search/bulk``.
     """
-    return _render_s2(query, _semanticscholar_term)
+    return _render_s2(query, _semanticscholar_term, preserve_quotes)
 
 
-def build_europepmc_query(query: str) -> str:
+def build_europepmc_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis de EuropePMC.
 
     Preparado para un futuro fetcher; aún no se usa en el pipeline.
     """
-    return _render_boolean(query, _europepmc_term)
+    return _render_boolean(query, _europepmc_term, preserve_quotes)
 
 
-def build_lens_query(query: str) -> str:
+def build_lens_query(query: str, preserve_quotes: bool = False) -> str:
     """Traduce la consulta genérica a sintaxis Lens.org (query_string)."""
-    return _render_boolean(query, _semanticscholar_term)
+    return _render_boolean(query, _semanticscholar_term, preserve_quotes)
 
 
 # Registro extensible: agregar una nueva API = registrar aquí su builder.
-BUILDERS: dict[str, Callable[[str], str]] = {
+BUILDERS: dict[str, Callable[..., str]] = {
     "Crossref": build_crossref_query,
     "OpenAlex": build_openalex_query,
     "PubMed": build_pubmed_query,
@@ -239,11 +234,11 @@ BUILDERS: dict[str, Callable[[str], str]] = {
 }
 
 
-def build_query(source: str, query: str) -> str:
+def build_query(source: str, query: str, preserve_quotes: bool = False) -> str:
     """Traduce ``query`` usando el builder registrado para ``source``.
 
     Si ``source`` no está registrado, devuelve la consulta intacta, de modo que
     un API nuevo sin builder propio sigue funcionando con la sintaxis genérica.
     """
     builder = BUILDERS.get(source)
-    return builder(query) if builder is not None else query
+    return builder(query, preserve_quotes) if builder is not None else query

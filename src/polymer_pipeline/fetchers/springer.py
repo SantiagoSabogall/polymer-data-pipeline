@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 URL = "https://api.springernature.com/meta/v2/json"
 
 
-async def fetch_springer(query: str) -> list[dict]:
+async def fetch_springer(query: str, preserve_quotes: bool = False) -> list[dict]:
     cache_key = f"Springer:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
@@ -29,7 +29,7 @@ async def fetch_springer(query: str) -> list[dict]:
         logger.warning("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
 
-    translated = build_springer_query(query)
+    translated = build_springer_query(query, preserve_quotes)
 
     def build_params(start: int) -> dict:
         return {

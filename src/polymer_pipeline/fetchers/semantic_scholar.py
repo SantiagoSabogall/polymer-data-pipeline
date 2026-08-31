@@ -47,7 +47,9 @@ def _normalize_paper(paper: dict) -> dict:
     }
 
 
-async def fetch_semantic_scholar(query: str, max_results: int = 100) -> list[dict]:
+async def fetch_semantic_scholar(
+    query: str, max_results: int = 100, preserve_quotes: bool = False,
+) -> list[dict]:
     """Obtiene artículos de Semantic Scholar vía búsqueda masiva (bulk, async)."""
     cache_key = f"SemanticScholar:{query}"
     cached = get_cached(cache_key)
@@ -55,7 +57,7 @@ async def fetch_semantic_scholar(query: str, max_results: int = 100) -> list[dic
         logger.info("[SemanticScholar] Usando cache para: %s...", query[:60])
         return cached
 
-    translated = build_semanticscholar_query(query)
+    translated = build_semanticscholar_query(query, preserve_quotes)
 
     normalized: list[dict] = []
     token: str | None = None

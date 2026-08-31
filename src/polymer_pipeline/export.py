@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,54 @@ def export_bibtex(articles: list[dict], filepath: str = "consolidated_results.bi
             f.write(f"  source = {{{art.get('source', '')}}}\n")
             f.write("}\n\n")
     logger.info("[Export] BibTeX guardado en %s", filepath)
+
+
+def export_json(articles: list[dict], filepath: str = "consolidated_results.json") -> None:
+    if not articles:
+        logger.warning("[Export] No hay artículos para exportar a JSON.")
+        return
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(articles, f, indent=4, ensure_ascii=False)
+    logger.info("[Export] JSON guardado en %s", filepath)
+
+
+def export_all(
+    articles: list[dict],
+    output_dir: Path | str,
+    formats: list[str] | None = None,
+) -> dict[str, Path]:
+    """Exporta artículos en múltiples formatos.
+
+    Args:
+        articles: Lista de artículos a exportar.
+        output_dir: Directorio de salida.
+        formats: Lista de formatos ("csv", "bibtex", "json"). Default: todos.
+
+    Returns:
+        Dict con los formatos exportados y sus rutas.
+    """
+    if formats is None:
+        formats = ["csv", "bibtex", "json"]
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    results: dict[str, Path] = {}
+
+    for fmt in formats:
+        if fmt == "csv":
+            path = out / "consolidated_results.csv"
+            export_csv(articles, filepath=str(path))
+            results["csv"] = path
+        elif fmt == "bibtex":
+            path = out / "consolidated_results.bib"
+            export_bibtex(articles, filepath=str(path))
+            results["bibtex"] = path
+        elif fmt == "json":
+            path = out / "consolidated_results.json"
+            export_json(articles, filepath=str(path))
+            results["json"] = path
+
+    return results
 
 
 def _sanitize_bibtex(text: str) -> str:

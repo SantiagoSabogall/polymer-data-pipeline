@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import logging
-from collections import Counter
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from polymer_pipeline._plot_common import (
+    extract_level_distribution,
+    extract_source_distribution,
+    extract_top_journals,
+    extract_top_keywords,
+    extract_year_counts,
+)
 from polymer_pipeline.sources import SOURCE_COLORS
 
 logger = logging.getLogger(__name__)
@@ -24,14 +30,13 @@ DARK_TEMPLATE = dict(
 
 
 def plot_publications_by_year(df: pd.DataFrame) -> go.Figure:
-    if "year" not in df.columns or df["year"].dropna().empty:
+    years, counts = extract_year_counts(df)
+    if not years:
         fig = go.Figure()
         fig.update_layout(**DARK_TEMPLATE, title="Evolución de Publicaciones por Año (sin datos)")
         return fig
-    year = pd.to_numeric(df["year"], errors="coerce").dropna().astype(int)
-    year_counts = year.value_counts().sort_index().reset_index()
-    year_counts.columns = ["year", "count"]
 
+    year_counts = pd.DataFrame({"year": years, "count": counts})
     fig = px.line(year_counts, x="year", y="count",
                   title="Evolución de Publicaciones por Año",
                   markers=True)
@@ -43,14 +48,13 @@ def plot_publications_by_year(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_top_journals(df: pd.DataFrame, top_n: int = 10) -> go.Figure:
-    if "journal" not in df.columns:
+    names, counts = extract_top_journals(df, top_n)
+    if not names:
         fig = go.Figure()
         fig.update_layout(**DARK_TEMPLATE, title=f"Top {top_n} Revistas (sin datos)")
         return fig
-    journal = df["journal"].replace("No disponible", pd.NA).dropna()
-    counts = journal.value_counts().head(top_n)
 
-    fig = px.bar(x=counts.values, y=counts.index, orientation="h",
+    fig = px.bar(x=counts, y=names, orientation="h",
                  title=f"Top {top_n} Revistas",
                  color_discrete_sequence=["#14b8a6"])
     fig.update_layout(**DARK_TEMPLATE, height=400,
@@ -60,24 +64,11 @@ def plot_top_journals(df: pd.DataFrame, top_n: int = 10) -> go.Figure:
 
 
 def plot_top_keywords(data: list[dict], top_n: int = 10) -> go.Figure:
-    stop_words = {"and", "of", "the", "for", "a", "toward", "with", "from",
-                  "on", "in", "to", "as", "by", "an", "its", "via", "based",
-                  "using", "at", "their", "are", "is", "be"}
-
-    all_words: list[str] = []
-    for item in data:
-        words = (item.get("title", "").lower()
-                 .replace("/", " ").replace("(", " ").replace(")", " ").split())
-        all_words.extend(words)
-
-    keywords = [w for w in all_words if w not in stop_words and len(w) > 2]
-    top = Counter(keywords).most_common(top_n)
-    if not top:
+    words, freqs = extract_top_keywords(data, top_n)
+    if not words:
         fig = go.Figure()
         fig.update_layout(**DARK_TEMPLATE, title="Top Palabras Clave (sin datos)")
         return fig
-
-    words, freqs = zip(*top)
 
     fig = px.bar(x=list(words), y=list(freqs),
                  title=f"Top {top_n} Palabras Clave en Títulos",
@@ -90,14 +81,14 @@ def plot_top_keywords(data: list[dict], top_n: int = 10) -> go.Figure:
 
 
 def plot_source_distribution(df: pd.DataFrame) -> go.Figure:
-    if "source" not in df.columns or df["source"].dropna().empty:
+    names, counts = extract_source_distribution(df)
+    if not names:
         fig = go.Figure()
         fig.update_layout(**DARK_TEMPLATE, title="Distribución por Fuente (sin datos)")
         return fig
-    counts = df["source"].value_counts()
-    colors = [SOURCE_COLORS.get(s, "#fbbf24") for s in counts.index]
 
-    fig = px.pie(values=counts.values, names=counts.index,
+    colors = [SOURCE_COLORS.get(s, "#fbbf24") for s in names]
+    fig = px.pie(values=counts, names=names,
                  title="Distribución por Fuente (API)",
                  color_discrete_sequence=colors,
                  hole=0.3)
@@ -109,23 +100,19 @@ def plot_source_distribution(df: pd.DataFrame) -> go.Figure:
 
 
 def plot_level_distribution(df: pd.DataFrame) -> go.Figure:
-    if "level" not in df.columns or df["level"].dropna().empty:
+    labels, counts = extract_level_distribution(df)
+    if not labels:
         fig = go.Figure()
         fig.update_layout(**DARK_TEMPLATE, title="Distribución por Nivel (sin datos)")
         return fig
-    level_labels = {
-        "L1": "L1 Blends", "L2": "L2 Aditivos",
-        "L3": "L3 Empaques", "L4": "L4 Biodegradables",
-    }
-    level_colors = {
-        "L1": "#10b981", "L2": "#f59e0b",
-        "L3": "#3b82f6", "L4": "#ec4899",
-    }
-    counts = df["level"].value_counts()
-    labels = [level_labels.get(lvl, lvl) for lvl in counts.index]
-    colors = [level_colors.get(lvl, "#94a3b8") for lvl in counts.index]
 
-    fig = px.bar(x=labels, y=counts.values,
+    level_colors = {
+        "L1 Blends": "#10b981", "L2 Aditivos": "#f59e0b",
+        "L3 Empaques": "#3b82f6", "L4 Biodegradables": "#ec4899",
+    }
+    colors = [level_colors.get(lvl, "#94a3b8") for lvl in labels]
+
+    fig = px.bar(x=labels, y=counts,
                  title="Distribución por Nivel",
                  color=labels, color_discrete_sequence=colors)
     fig.update_layout(**DARK_TEMPLATE, height=300, showlegend=False,

@@ -12,14 +12,16 @@ from polymer_pipeline.settings import NCBI_API_KEY, NCBI_EMAIL
 logger = logging.getLogger(__name__)
 
 
-async def fetch_pubmed(query: str, max_results: int = 100) -> list[dict]:
+async def fetch_pubmed(
+    query: str, max_results: int = 100, preserve_quotes: bool = False,
+) -> list[dict]:
     cache_key = f"PubMed:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
         logger.info("[PubMed] Usando cache para: %s...", query[:60])
         return cached
 
-    query = build_pubmed_query(query)
+    query = build_pubmed_query(query, preserve_quotes)
     base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
     search_params = {
         "db": "pubmed",

@@ -19,6 +19,7 @@ async def fetch_openalex(
     mailto: str | None = None,
     api_key: str | None = None,
     title_abs_only: bool = False,
+    preserve_quotes: bool = False,
 ) -> list[dict]:
     """Fetch from OpenAlex. mailto for polite pool, api_key for higher quota."""
     cache_key = f"OpenAlex:{query}"
@@ -27,7 +28,7 @@ async def fetch_openalex(
         logger.info("[OpenAlex] Usando cache para: %s...", query[:60])
         return cached
 
-    translated = build_openalex_query(query)
+    translated = build_openalex_query(query, preserve_quotes)
 
     resolved_mailto = mailto or OPENALEX_EMAIL
     resolved_api_key = api_key or OPENALEX_API_KEY

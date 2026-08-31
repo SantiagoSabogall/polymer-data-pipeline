@@ -12,6 +12,7 @@ import time
 from typing import Callable
 
 from polymer_pipeline.dict import LEVEL_FILTER_RULES, SEARCH_QUERIES
+from polymer_pipeline.downloader import ArticleDownloader, DownloadResult
 from polymer_pipeline.fetchers import (
     fetch_crossref,
     fetch_elsevier,
@@ -23,7 +24,6 @@ from polymer_pipeline.fetchers import (
     fetch_springer,
 )
 from polymer_pipeline.filters import passes_filter
-from polymer_pipeline.query_builder import PRESERVE_QUOTES  # noqa: F401
 from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ def _build_fetcher_specs(
     sources: list[str] | None = None,
     max_results: int = TOTAL_RESULTS_PER_QUERY,
     title_abs_only: bool = False,
+    preserve_quotes: bool = False,
 ) -> list[tuple[Callable, tuple, dict]]:
     """Devuelve las specs (fn, args, kwargs) de los fetchers solicitados."""
     specs = []
@@ -63,6 +64,8 @@ def _build_fetcher_specs(
             final_kwargs["max_results"] = max_results
         if name in _FETCHERS_WITH_TITLE_ABS_ONLY:
             final_kwargs["title_abs_only"] = title_abs_only
+        if preserve_quotes:
+            final_kwargs["preserve_quotes"] = True
         specs.append((fn, (query,) + args, final_kwargs))
     return specs
 
@@ -170,19 +173,15 @@ async def run_pipeline(
     Returns:
         Lista de artículos normalizados, filtrados y deduplicados.
     """
-    global PRESERVE_QUOTES
-
     title_abs_only = bool(custom_queries)
+    preserve_quotes = bool(custom_queries)
 
     if custom_queries:
         queries = custom_queries
-        PRESERVE_QUOTES = True
     elif levels:
         queries = {k: v for k, v in SEARCH_QUERIES.items() if k in levels}
-        PRESERVE_QUOTES = False
     else:
         queries = dict(SEARCH_QUERIES)
-        PRESERVE_QUOTES = False
 
     if custom_filter_rules is not None:
         filter_rules = custom_filter_rules
@@ -215,15 +214,13 @@ async def run_pipeline(
     for level, level_queries in queries.items():
         for q in level_queries:
             for fn, args, kwargs in _build_fetcher_specs(
-                q, sources, max_results, title_abs_only,
+                q, sources, max_results, title_abs_only, preserve_quotes,
             ):
                 tasks.append((level, q, fn, args, kwargs))
 
     logger.info("[Pipeline] %d tareas a ejecutar", len(tasks))
 
     results_by_query = await _collect(tasks, progress_callback)
-
-    PRESERVE_QUOTES = False
 
     articles = _dedupe(results_by_query, queries, filter_rules, title_abs_only=title_abs_only)
     logger.info("[Pipeline] %d artículos únicos después de filtrado", len(articles))
@@ -291,3 +288,20 @@ def compute_quality_metrics(articles: list[dict]) -> dict:
             if a.get("journal") in ("No disponible", "Desconocido")
         ),
     }
+
+
+async def download_pdfs(
+    articles: list[dict],
+    max_concurrent: int = 3,
+) -> list[DownloadResult]:
+    """Descarga PDFs de artículos open-access de forma asíncrona.
+
+    Args:
+        articles: Lista de artículos (deben tener campo ``pdf_url``).
+        max_concurrent: Descargas simultáneas máximo.
+
+    Returns:
+        Lista de ``DownloadResult`` con el resultado de cada descarga.
+    """
+    downloader = ArticleDownloader(max_concurrent=max_concurrent)
+    return await downloader.download_batch(articles)

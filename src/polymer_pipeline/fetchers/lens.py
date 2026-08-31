@@ -17,7 +17,9 @@ LENS_API_URL = "https://api.lens.org/scholarly/search"
 LENS_MAX_SIZE = 1000
 
 
-async def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
+async def fetch_lens(
+    query: str, max_results: int = 100, preserve_quotes: bool = False,
+) -> list[dict]:
     """Obtiene artículos de Lens.org con vinculación papers-patentes."""
     cache_key = f"Lens:{query}"
     cached = get_cached(cache_key)
@@ -29,7 +31,7 @@ async def fetch_lens(query: str, max_results: int = 100) -> list[dict]:
         logger.warning("[Lens] Saltando: No se configuró LENS_API_KEY en API_KEY.env")
         return []
 
-    translated = build_lens_query(query)
+    translated = build_lens_query(query, preserve_quotes)
 
     headers = {
         "Authorization": f"Bearer {LENS_API_KEY}",

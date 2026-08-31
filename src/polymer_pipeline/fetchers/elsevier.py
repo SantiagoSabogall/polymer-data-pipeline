@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 URL = "https://api.elsevier.com/content/search/scopus"
 
 
-async def fetch_elsevier(query: str) -> list[dict]:
+async def fetch_elsevier(query: str, preserve_quotes: bool = False) -> list[dict]:
     cache_key = f"Elsevier:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
@@ -29,7 +29,7 @@ async def fetch_elsevier(query: str) -> list[dict]:
         logger.warning("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
 
-    translated = build_elsevier_query(query)
+    translated = build_elsevier_query(query, preserve_quotes)
 
     def build_params(start: int) -> dict:
         return {

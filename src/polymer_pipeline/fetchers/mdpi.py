@@ -22,6 +22,7 @@ async def fetch_mdpi(
     mailto: str | None = None,
     api_key: str | None = None,
     title_abs_only: bool = False,
+    preserve_quotes: bool = False,
 ) -> list[dict]:
     """Fetch MDPI articles via OpenAlex with publisher filter."""
     cache_key = f"MDPI:{query}"
@@ -30,7 +31,7 @@ async def fetch_mdpi(
         logger.info("[MDPI] Usando cache para: %s...", query[:60])
         return cached
 
-    translated = build_openalex_query(query)
+    translated = build_openalex_query(query, preserve_quotes)
 
     resolved_mailto = mailto or OPENALEX_EMAIL
     resolved_api_key = api_key or OPENALEX_API_KEY

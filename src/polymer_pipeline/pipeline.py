@@ -7,13 +7,12 @@ Or via pyproject.toml: polymer-pipeline
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 
 from polymer_pipeline.core import run_pipeline
 from polymer_pipeline.dashboard import generate_dashboard
-from polymer_pipeline.export import export_bibtex, export_csv
+from polymer_pipeline.export import export_all
 from polymer_pipeline.plots import generate_all_plots
 from polymer_pipeline.settings import load_settings
 
@@ -31,13 +30,9 @@ async def main() -> None:
 
     articles = await run_pipeline()
 
-    json_path = PROJECT_ROOT / "consolidated_results.json"
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(articles, f, indent=4, ensure_ascii=False)
-    logger.info(
-        "[Éxito] %d artículos guardados en %s",
-        len(articles), json_path,
-    )
+    exports = export_all(articles, output_dir=PROJECT_ROOT)
+    for fmt, path in exports.items():
+        logger.info("[Éxito] %s exportado en %s", fmt.upper(), path)
 
     plots = generate_all_plots(
         articles, pdf_dir=str(PROJECT_ROOT / "plots_output"),
@@ -49,9 +44,6 @@ async def main() -> None:
         f.write(html)
     logger.info("[Éxito] Dashboard generado en %s", html_path)
     logger.info("[Éxito] PDFs de gráficas en ./plots_output/")
-
-    export_csv(articles, filepath=str(PROJECT_ROOT / "consolidated_results.csv"))
-    export_bibtex(articles, filepath=str(PROJECT_ROOT / "consolidated_results.bib"))
 
     logger.info("Proceso finalizado con éxito!")
 

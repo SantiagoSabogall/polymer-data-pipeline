@@ -52,8 +52,8 @@ CACHE_TTL: int = 3600
 # ── API Keys ───────────────────────────────────────────────────────────
 ELSEVIER_API_KEY: str | None = os.getenv("ELSEVIER_API_KEY")
 SPRINGER_API_KEY: str | None = os.getenv("SPRINGER_META_API_KEY")
-CROSSREF_EMAIL: str = os.getenv("CROSSREF_POLITE_EMAIL", "[EMAIL_ADDRESS]")
-NCBI_EMAIL: str = os.getenv("NCBI_EMAIL", "[EMAIL_ADDRESS]")
+CROSSREF_EMAIL: str = os.getenv("CROSSREF_POLITE_EMAIL", "")
+NCBI_EMAIL: str = os.getenv("NCBI_EMAIL", "")
 NCBI_API_KEY: str | None = os.getenv("PUBMED_API_KEY")
 OPENALEX_EMAIL: str = os.getenv("OPENALEX_EMAIL", "[EMAIL_ADDRESS]")
 OPENALEX_API_KEY: str | None = os.getenv("OPENALEX_API_KEY")

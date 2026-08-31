@@ -7,16 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first for better caching
+# Copy project files
 COPY pyproject.toml README.md ./
-COPY requirements.txt ./
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy source code
 COPY src/ ./src/
 COPY app.py main.py ./
+
+# Install the package in editable mode
+RUN pip install --no-cache-dir -e .
 
 # Create cache directory
 RUN mkdir -p .cache

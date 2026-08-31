@@ -28,7 +28,7 @@ def _strip_jats_tags(text: str) -> str:
 
 
 async def fetch_crossref(
-    query: str, title_abs_only: bool = False,
+    query: str, title_abs_only: bool = False, preserve_quotes: bool = False,
 ) -> list[dict]:
     cache_key = f"Crossref:{query}"
     cached = get_cached(cache_key)
@@ -36,7 +36,7 @@ async def fetch_crossref(
         logger.info("[Crossref] Usando cache para: %s...", query[:60])
         return cached
 
-    translated = build_crossref_query(query)
+    translated = build_crossref_query(query, preserve_quotes)
 
     headers = {
         "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"

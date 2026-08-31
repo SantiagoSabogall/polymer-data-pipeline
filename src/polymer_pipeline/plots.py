@@ -4,7 +4,6 @@ import base64
 import io
 import json
 import logging
-from collections import Counter
 from pathlib import Path
 
 import matplotlib
@@ -15,6 +14,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
+from polymer_pipeline._plot_common import (
+    extract_source_distribution,
+    extract_top_journals,
+    extract_top_keywords,
+    extract_year_counts,
+)
 from polymer_pipeline.sources import SOURCE_COLORS
 
 logger = logging.getLogger(__name__)
@@ -29,12 +34,6 @@ PALETTE: dict[str, str] = {
     "teal":    "#14b8a6",
     "coral":   "#f87171",
     "amber":   "#fbbf24",
-}
-
-STOP_WORDS: set[str] = {
-    "and", "of", "the", "for", "a", "toward", "with", "from",
-    "on", "in", "to", "as", "by", "an", "its", "via", "based",
-    "using", "at", "their", "are", "is", "be",
 }
 
 
@@ -66,14 +65,18 @@ def _save_pdf(fig: plt.Figure, path: str) -> None:
 
 
 def plot_publications_by_year(df: pd.DataFrame, pdf_dir: str = ".") -> str:
-    year = pd.to_numeric(df["year"], errors="coerce").dropna().astype(int)
-    year_unique, year_counts = np.unique(year, return_counts=True)
+    years, counts = extract_year_counts(df)
+    if not years:
+        fig, ax = plt.subplots(figsize=(9, 4))
+        ax.set_title("Sin datos", fontsize=14, pad=12)
+        _apply_dark_style(fig, ax)
+        b64 = _fig_to_base64(fig)
+        return b64
 
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.plot(year_unique, year_counts, marker="o",
+    ax.plot(years, counts, marker="o",
             color=PALETTE["blue"], linewidth=2.5, markersize=6)
-    ax.fill_between(year_unique, year_counts,
-                    alpha=0.15, color=PALETTE["blue"])
+    ax.fill_between(years, counts, alpha=0.15, color=PALETTE["blue"])
     ax.set_title("Evolucion de Publicaciones por Anio", fontsize=14, pad=12)
     ax.set_xlabel("Anio")
     ax.set_ylabel("Cantidad de Articulos")
@@ -89,11 +92,16 @@ def plot_publications_by_year(df: pd.DataFrame, pdf_dir: str = ".") -> str:
 
 
 def plot_top_journals(df: pd.DataFrame, pdf_dir: str = ".", top_n: int = 10) -> str:
-    journal = df["journal"].replace("No disponible", np.nan).dropna()
-    journal_counts = journal.value_counts().head(top_n)
+    names, counts = extract_top_journals(df, top_n)
+    if not names:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.set_title("Sin datos", fontsize=14, pad=12)
+        _apply_dark_style(fig, ax)
+        b64 = _fig_to_base64(fig)
+        return b64
 
     fig, ax = plt.subplots(figsize=(10, 5))
-    bars = ax.barh(journal_counts.index[::-1], journal_counts.values[::-1],
+    bars = ax.barh(names[::-1], counts[::-1],
                    color=PALETTE["teal"], edgecolor="none", height=0.6)
 
     for bar in bars:
@@ -117,15 +125,13 @@ def plot_top_journals(df: pd.DataFrame, pdf_dir: str = ".", top_n: int = 10) -> 
 
 
 def plot_top_keywords(data: list[dict], pdf_dir: str = ".", top_n: int = 10) -> str:
-    all_words: list[str] = []
-    for item in data:
-        words = (item.get("title", "").lower()
-                 .replace("/", " ").replace("(", " ").replace(")", " ").split())
-        all_words.extend(words)
-
-    keywords = [w for w in all_words if w not in STOP_WORDS and len(w) > 2]
-    top = Counter(keywords).most_common(top_n)
-    words, freqs = zip(*top) if top else ([], [])
+    words, freqs = extract_top_keywords(data, top_n)
+    if not words:
+        fig, ax = plt.subplots(figsize=(9, 4))
+        ax.set_title("Sin datos", fontsize=14, pad=12)
+        _apply_dark_style(fig, ax)
+        b64 = _fig_to_base64(fig)
+        return b64
 
     fig, ax = plt.subplots(figsize=(9, 4))
     x = np.arange(len(words))
@@ -152,13 +158,13 @@ def plot_top_keywords(data: list[dict], pdf_dir: str = ".", top_n: int = 10) -> 
 
 
 def plot_source_distribution(df: pd.DataFrame, pdf_dir: str = ".") -> str:
-    counts = df["source"].value_counts()
-    colors = [SOURCE_COLORS.get(s, PALETTE["amber"]) for s in counts.index]
+    names, counts = extract_source_distribution(df)
+    colors = [SOURCE_COLORS.get(s, PALETTE["amber"]) for s in names]
 
     fig, ax = plt.subplots(figsize=(6, 5))
     wedges, texts, autotexts = ax.pie(
-        counts.values,
-        labels=counts.index,
+        counts,
+        labels=names,
         colors=colors,
         autopct="%1.1f%%",
         startangle=140,
