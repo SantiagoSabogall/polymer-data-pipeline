@@ -293,15 +293,64 @@ def compute_quality_metrics(articles: list[dict]) -> dict:
 async def download_pdfs(
     articles: list[dict],
     max_concurrent: int = 3,
+    progress_callback: Callable[[int, int, str, str], None] | None = None,
 ) -> list[DownloadResult]:
     """Descarga PDFs de artículos open-access de forma asíncrona.
 
     Args:
         articles: Lista de artículos (deben tener campo ``pdf_url``).
         max_concurrent: Descargas simultáneas máximo.
+        progress_callback: fn(completed, total, filename, status) para progreso.
 
     Returns:
         Lista de ``DownloadResult`` con el resultado de cada descarga.
     """
     downloader = ArticleDownloader(max_concurrent=max_concurrent)
-    return await downloader.download_batch(articles)
+    return await downloader.download_batch(articles, progress_callback=progress_callback)
+
+
+async def download_and_upload_pdfs(
+    articles: list[dict],
+    max_concurrent: int = 3,
+    progress_callback: Callable[[int, int, str, str], None] | None = None,
+) -> dict:
+    """Descarga PDFs y los sube a Cloudflare R2.
+
+    Args:
+        articles: Lista de artículos (deben tener campo ``pdf_url``).
+        max_concurrent: Descargas simultáneas máximo.
+        progress_callback: fn(completed, total, filename, status) para progreso.
+
+    Returns:
+        Dict con {results, uploaded, skipped, failed}.
+    """
+    from polymer_pipeline.r2_storage import get_r2_client
+
+    r2 = get_r2_client()
+    if not r2:
+        logger.warning("[Core] R2 no configurado, descargando solo a local")
+        results = await download_pdfs(articles, max_concurrent)
+        return {
+            "results": results,
+            "uploaded": 0,
+            "skipped": 0,
+            "failed": sum(1 for r in results if not r.success),
+            "total": len(results),
+        }
+
+    downloader = ArticleDownloader(max_concurrent=max_concurrent, r2_storage=r2)
+    results = await downloader.download_batch(
+        articles, upload_to_r2=True, progress_callback=progress_callback,
+    )
+
+    uploaded = sum(1 for r in results if r.success and "uploaded to R2" in r.error)
+    skipped = sum(1 for r in results if r.success and "Already exists in R2" in r.error)
+    failed = sum(1 for r in results if not r.success)
+
+    return {
+        "results": results,
+        "uploaded": uploaded,
+        "skipped": skipped,
+        "failed": failed,
+        "total": len(results),
+    }

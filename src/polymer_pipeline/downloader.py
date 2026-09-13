@@ -4,6 +4,8 @@ Downloads PDF articles from URLs provided by the fetchers into a local
 ``downloads/`` folder. Handles rate limiting, error recovery, PDF
 validation, and a download manifest for tracking state.
 
+Optionally uploads downloaded PDFs to Cloudflare R2 storage.
+
 Uses aiohttp for async HTTP consistent with the rest of the pipeline.
 """
 
@@ -15,11 +17,14 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
 import aiohttp
+
+from polymer_pipeline.r2_storage import R2Storage
 
 logger = logging.getLogger(__name__)
 
@@ -97,11 +102,13 @@ class ArticleDownloader:
         download_dir: Path | str = DOWNLOAD_DIR,
         rate_limiter: DownloadRateLimiter | None = None,
         max_concurrent: int = 3,
+        r2_storage: R2Storage | None = None,
     ):
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(parents=True, exist_ok=True)
         self.rate_limiter = rate_limiter or DownloadRateLimiter()
         self.max_concurrent = max_concurrent
+        self.r2_storage = r2_storage
         self._manifest = self._load_manifest()
 
     def _load_manifest(self) -> dict:
@@ -143,6 +150,7 @@ class ArticleDownloader:
         doi: str = "",
         title: str = "",
         max_retries: int = 2,
+        upload_to_r2: bool = False,
         _depth: int = 0,
     ) -> DownloadResult:
         result = DownloadResult(doi=doi, title=title, pdf_url=url)
@@ -160,7 +168,25 @@ class ArticleDownloader:
             result.success = True
             result.file_size = entry.get("file_size", 0)
             result.sha256 = entry.get("sha256", "")
-            result.error = "Already downloaded (cached)"
+
+            if upload_to_r2 and self.r2_storage:
+                if entry.get("uploaded_to_r2"):
+                    result.error = "Already exists in R2"
+                elif not self.r2_storage.file_exists(filename):
+                    uploaded = self.r2_storage.upload_file(filepath, filename)
+                    if uploaded:
+                        self._manifest[filename]["uploaded_to_r2"] = True
+                        self._save_manifest()
+                        result.error = "uploaded to R2"
+                    else:
+                        result.error = "Downloaded but R2 upload failed"
+                else:
+                    self._manifest[filename]["uploaded_to_r2"] = True
+                    self._save_manifest()
+                    result.error = "Already exists in R2"
+            else:
+                result.error = "Already downloaded (cached)"
+
             return result
 
         last_error = ""
@@ -235,8 +261,25 @@ class ArticleDownloader:
                         "filename": filename, "file_size": total_size,
                         "sha256": sha256,
                         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "uploaded_to_r2": False,
                     }
                     self._save_manifest()
+
+                    if upload_to_r2 and self.r2_storage:
+                        r2_key = filename
+                        if not self.r2_storage.file_exists(r2_key):
+                            uploaded = self.r2_storage.upload_file(filepath, r2_key)
+                            if uploaded:
+                                self._manifest[filename]["uploaded_to_r2"] = True
+                                self._save_manifest()
+                                result.error = "Downloaded + uploaded to R2"
+                            else:
+                                result.error = "Downloaded but R2 upload failed"
+                        else:
+                            self._manifest[filename]["uploaded_to_r2"] = True
+                            self._save_manifest()
+                            result.error = "Already exists in R2"
+
                     return result
 
             except asyncio.TimeoutError:
@@ -271,7 +314,12 @@ class ArticleDownloader:
                 return match.group(1)
         return None
 
-    async def download_batch(self, articles: list[dict]) -> list[DownloadResult]:
+    async def download_batch(
+        self,
+        articles: list[dict],
+        upload_to_r2: bool = False,
+        progress_callback: Callable[[int, int, str, str], None] | None = None,
+    ) -> list[DownloadResult]:
         results: list[DownloadResult] = []
         downloadable = [art for art in articles if art.get("pdf_url")]
         total = len(downloadable)
@@ -280,7 +328,8 @@ class ArticleDownloader:
             logger.info("[Downloader] No hay artículos con URLs de PDF para descargar.")
             return results
 
-        logger.info("[Downloader] Iniciando descarga de %d PDFs...", total)
+        r2_msg = " + upload a R2" if upload_to_r2 and self.r2_storage else ""
+        logger.info("[Downloader] Iniciando descarga de %d PDFs%s...", total, r2_msg)
         success_count = 0
         fail_count = 0
         semaphore = asyncio.Semaphore(self.max_concurrent)
@@ -295,6 +344,7 @@ class ArticleDownloader:
                     url=art["pdf_url"],
                     doi=art.get("doi", ""),
                     title=art.get("title", ""),
+                    upload_to_r2=upload_to_r2,
                 )
 
         headers = {
@@ -313,6 +363,18 @@ class ArticleDownloader:
                 else:
                     fail_count += 1
                 done = success_count + fail_count
+
+                if progress_callback:
+                    if "uploaded to R2" in result.error:
+                        status = "uploaded"
+                    elif "Already exists in R2" in result.error:
+                        status = "skipped"
+                    elif result.success:
+                        status = "ok"
+                    else:
+                        status = "failed"
+                    progress_callback(done, total, result.filename, status)
+
                 if done % 50 == 0 or done == total:
                     logger.info(
                         "  [Downloader] %d/%d (%d OK, %d fallidos)",
@@ -323,4 +385,9 @@ class ArticleDownloader:
             "[Downloader] Completo: %d descargados, %d fallidos",
             success_count, fail_count,
         )
+
+        if upload_to_r2 and self.r2_storage:
+            self.r2_storage.upload_manifest(MANIFEST_PATH)
+            logger.info("[Downloader] Manifest sincronizado a R2")
+
         return results

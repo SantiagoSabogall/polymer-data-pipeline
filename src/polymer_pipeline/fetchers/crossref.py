@@ -6,10 +6,7 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.http import PageFetcher, make_session
 from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
-from polymer_pipeline.settings import (
-    CROSSREF_EMAIL,
-    TOTAL_RESULTS_PER_QUERY,
-)
+from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY, get_crossref_email
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +36,7 @@ async def fetch_crossref(
     translated = build_crossref_query(query, preserve_quotes)
 
     headers = {
-        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
+        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{get_crossref_email()})"
     }
 
     def build_params(start: int) -> dict:

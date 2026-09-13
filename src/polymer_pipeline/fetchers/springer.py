@@ -9,8 +9,8 @@ from polymer_pipeline.rate_limiter import get_rate_limiter
 from polymer_pipeline.settings import (
     BATCH_SIZE,
     SLEEP_BETWEEN_BATCHES,
-    SPRINGER_API_KEY,
     TOTAL_RESULTS_PER_QUERY,
+    get_springer_api_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,8 @@ async def fetch_springer(query: str, preserve_quotes: bool = False) -> list[dict
         logger.info("[Springer] Usando cache para: %s...", query[:60])
         return cached
 
-    if not SPRINGER_API_KEY:
+    springer_api_key = get_springer_api_key()
+    if not springer_api_key:
         logger.warning("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
 
@@ -36,7 +37,7 @@ async def fetch_springer(query: str, preserve_quotes: bool = False) -> list[dict
             "q": translated,
             "p": BATCH_SIZE,
             "s": start,
-            "api_key": SPRINGER_API_KEY,
+            "api_key": springer_api_key,
         }
 
     def extract_items(data: dict) -> list[dict]:

@@ -10,7 +10,7 @@ import concurrent.futures
 import json
 import logging
 import sys
-import tempfile
+from datetime import date
 from pathlib import Path
 from urllib.parse import quote
 
@@ -48,12 +48,15 @@ load_dotenv(
 
 from polymer_pipeline.core import (
     compute_quality_metrics,
+    download_and_upload_pdfs,
+    download_pdfs,
     filter_articles,
     run_pipeline,
 )
 from polymer_pipeline.dict import LEVELS, build_boolean_query
-from polymer_pipeline.export import export_bibtex, export_csv
+from polymer_pipeline.export import _bibtex_string, _csv_string
 from polymer_pipeline.plots_interactive import generate_interactive_plots
+from polymer_pipeline.r2_manage import delete_all_from_r2, get_r2_status
 from polymer_pipeline.settings import load_settings
 from polymer_pipeline.sources import SOURCE_NAMES, SOURCES
 
@@ -450,7 +453,7 @@ with st.sidebar:
     search_filter = st.text_input(
         "Buscar en resultados:", placeholder="título, autor, DOI..."
     )
-    year_range = st.slider("Rango de años", 1990, 2026, (2015, 2026))
+    year_range = st.slider("Rango de años", 1990, date.today().year, (2015, date.today().year))
     filter_by_source = st.multiselect(
         "Filtrar por fuente:", SOURCE_NAMES, default=SOURCE_NAMES
     )
@@ -596,9 +599,7 @@ if not display_df.empty:
             if doi:
                 st.link_button(
                     "Google Scholar",
-                    url=(
-                        "https://scholar.google.com/scholar?q={doi}"
-                    ),
+                    url=f"https://scholar.google.com/scholar?q={doi}",
                     use_container_width=True,
                 )
             if article.get("title"):
@@ -647,15 +648,7 @@ if not display_df.empty:
                 key="export_selected_csv",
             )
         with exp_cols[1]:
-            from polymer_pipeline.export import (
-                export_bibtex as _export_bib,
-            )
-
-            with tempfile.NamedTemporaryFile(
-                suffix=".bib", delete=False
-            ) as tmp:
-                _export_bib(sel_articles, filepath=tmp.name)
-                bib_content = Path(tmp.name).read_text()
+            bib_content = _bibtex_string(sel_articles)
             st.download_button(
                 "BibTeX seleccionados",
                 data=bib_content,
@@ -700,13 +693,23 @@ st.divider()
 st.subheader("Exportar todos los resultados")
 col_exp1, col_exp2, col_exp3 = st.columns(3)
 with col_exp1:
-    if st.button("Exportar CSV"):
-        export_csv(filtered, filepath="/tmp/export.csv")
-        st.success("CSV exportado")
+    all_csv = _csv_string(filtered) if filtered else ""
+    st.download_button(
+        "Descargar CSV",
+        data=all_csv,
+        file_name="polymer_results.csv",
+        mime="text/csv",
+        key="export_all_csv",
+    )
 with col_exp2:
-    if st.button("Exportar BibTeX"):
-        export_bibtex(filtered, filepath="/tmp/export.bib")
-        st.success("BibTeX exportado")
+    all_bib = _bibtex_string(filtered) if filtered else ""
+    st.download_button(
+        "Descargar BibTeX",
+        data=all_bib,
+        file_name="polymer_results.bib",
+        mime="application/x-bibtex",
+        key="export_all_bib",
+    )
 with col_exp3:
     json_str = json.dumps(filtered, indent=2, ensure_ascii=False)
     st.download_button(
@@ -714,4 +717,148 @@ with col_exp3:
         data=json_str,
         file_name="polymer_results.json",
         mime="application/json",
+        key="export_all_json",
     )
+
+# ── Cloudflare R2 Storage ─────────────────────────────────────────────
+st.divider()
+st.subheader("Descargar PDFs")
+
+r2_status = get_r2_status()
+if r2_status:
+    r2_c1, r2_c2 = st.columns(2)
+    r2_c1.metric("PDFs en R2", r2_status["count"])
+    r2_c2.metric("Tamaño total", f"{r2_status['total_size_mb']:.1f} MB")
+
+pdf_available = [a for a in filtered if a.get("pdf_url")]
+total_pdf_available = len(pdf_available)
+
+if total_pdf_available > 0:
+    st.caption(f"Artículos con PDF disponible: **{total_pdf_available}**")
+
+    max_pdfs = st.slider(
+        "Cuántos PDFs descargar:",
+        min_value=1,
+        max_value=total_pdf_available,
+        value=total_pdf_available,
+        key="dl_max_pdfs",
+    )
+
+    col_r2, col_local = st.columns(2)
+
+    with col_r2:
+        st.markdown("**Cloudflare R2**")
+        if st.button(
+            f"Subir {max_pdfs} PDFs a R2",
+            type="primary",
+            use_container_width=True,
+            key="upload_to_r2",
+        ):
+            articles_to_download = pdf_available[:max_pdfs]
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            def _r2_progress(current: int, total: int, filename: str, status: str) -> None:
+                icons = {"uploaded": "↑", "skipped": "≈", "ok": "✓", "failed": "✗"}
+                icon = icons.get(status, "?")
+                short_name = filename[:50] + "..." if len(filename) > 50 else filename
+                progress_bar.progress(
+                    current / total,
+                    text=f"[{current}/{total}] {icon} {short_name}",
+                )
+
+            try:
+                r2_result = _run_async(
+                    download_and_upload_pdfs(
+                        articles_to_download,
+                        progress_callback=_r2_progress,
+                    )
+                )
+                progress_bar.empty()
+                status_text.empty()
+
+                uploaded = r2_result.get("uploaded", 0)
+                skipped = r2_result.get("skipped", 0)
+                failed = r2_result.get("failed", 0)
+                total = r2_result.get("total", 0)
+                st.success(
+                    f"{uploaded} subidos, {skipped} ya existían, "
+                    f"{failed} fallidos ({total} totales)"
+                )
+                st.rerun()
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                st.error(f"Error: {str(e)[:200]}")
+
+    with col_local:
+        st.markdown("**Descarga local**")
+        if st.button(
+            f"Descargar {max_pdfs} PDFs a disco",
+            type="secondary",
+            use_container_width=True,
+            key="download_local",
+        ):
+            articles_to_download = pdf_available[:max_pdfs]
+
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+
+            def _local_progress(current: int, total: int, filename: str, status: str) -> None:
+                icons = {"ok": "✓", "failed": "✗"}
+                icon = icons.get(status, "?")
+                short_name = filename[:50] + "..." if len(filename) > 50 else filename
+                progress_bar.progress(
+                    current / total,
+                    text=f"[{current}/{total}] {icon} {short_name}",
+                )
+
+            try:
+                local_results = _run_async(
+                    download_pdfs(articles_to_download, progress_callback=_local_progress)
+                )
+                progress_bar.empty()
+                status_text.empty()
+
+                ok = sum(1 for r in local_results if r.success)
+                fail = sum(1 for r in local_results if not r.success)
+                st.success(f"{ok} descargados, {fail} fallidos ({len(local_results)} totales)")
+                st.rerun()
+            except Exception as e:
+                progress_bar.empty()
+                status_text.empty()
+                st.error(f"Error: {str(e)[:200]}")
+else:
+    st.caption("No hay artículos con PDF disponible en los resultados actuales.")
+
+# Gestión de R2
+if r2_status and r2_status["count"] > 0:
+    st.markdown("---")
+    st.subheader("Gestionar R2")
+    st.warning(
+        f"Hay {r2_status['count']} PDFs en R2 ({r2_status['total_size_mb']:.1f} MB). "
+        "Eliminarlos es irreversible."
+    )
+    if st.button(
+        "Eliminar todos los PDFs de R2",
+        type="secondary",
+        use_container_width=True,
+        key="delete_r2_init",
+    ):
+        st.session_state["confirm_delete_r2"] = True
+
+    if st.session_state.get("confirm_delete_r2"):
+        st.error("¿Estás seguro? Se eliminarán TODOS los archivos de R2.")
+        del_col1, del_col2, _ = st.columns([1, 1, 2])
+        with del_col1:
+            if st.button("Sí, eliminar todo", type="primary", key="confirm_del_yes"):
+                with st.spinner("Eliminando..."):
+                    del_result = delete_all_from_r2()
+                    st.success(f"Eliminados {del_result['deleted']} archivos de R2")
+                    st.session_state["confirm_delete_r2"] = False
+                    st.rerun()
+        with del_col2:
+            if st.button("Cancelar", key="confirm_del_no"):
+                st.session_state["confirm_delete_r2"] = False
+                st.rerun()

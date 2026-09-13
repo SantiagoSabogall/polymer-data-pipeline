@@ -21,6 +21,7 @@ dependencies = [
     "lxml>=4.9",
     "streamlit>=1.30",
     "plotly>=5.18",
+    "boto3>=1.34",
 ]
 
 [project.scripts]

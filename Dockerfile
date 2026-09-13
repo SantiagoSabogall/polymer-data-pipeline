@@ -12,8 +12,8 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 COPY app.py main.py ./
 
-# Install the package in editable mode
-RUN pip install --no-cache-dir -e .
+# Install the package (production, non-editable)
+RUN pip install --no-cache-dir .
 
 # Create cache directory
 RUN mkdir -p .cache

@@ -7,7 +7,7 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.http import make_session, request_with_retry
 from polymer_pipeline.query_builder import build_pubmed_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
-from polymer_pipeline.settings import NCBI_API_KEY, NCBI_EMAIL
+from polymer_pipeline.settings import get_ncbi_api_key, get_ncbi_email
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ async def fetch_pubmed(
         "term": query,
         "retmax": max_results,
         "retmode": "json",
-        "email": NCBI_EMAIL,
+        "email": get_ncbi_email(),
     }
-    if NCBI_API_KEY:
-        search_params["api_key"] = NCBI_API_KEY
+    if get_ncbi_api_key():
+        search_params["api_key"] = get_ncbi_api_key()
 
     limiter = get_rate_limiter("PubMed")
     async with limiter:
@@ -62,8 +62,8 @@ async def fetch_pubmed(
                 "rettype": "xml",
                 "retmode": "xml",
             }
-            if NCBI_API_KEY:
-                fetch_params["api_key"] = NCBI_API_KEY
+            if get_ncbi_api_key():
+                fetch_params["api_key"] = get_ncbi_api_key()
             try:
                 resp = await request_with_retry(
                     session, "GET", base_url + "efetch.fcgi",

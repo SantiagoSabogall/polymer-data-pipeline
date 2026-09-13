@@ -45,40 +45,45 @@ async def request_with_retry(
     for attempt in range(max_retries):
         try:
             resp = await session.request(method, url, **kwargs)
-
-            # ── 429: Too Many Requests ──────────────────────────────
-            if resp.status == 429:
-                retry_after = resp.headers.get("Retry-After")
-                if retry_after:
-                    try:
-                        wait = float(retry_after)
-                    except ValueError:
+            try:
+                # ── 429: Too Many Requests ──────────────────────────
+                if resp.status == 429:
+                    retry_after = resp.headers.get("Retry-After")
+                    if retry_after:
+                        try:
+                            wait = float(retry_after)
+                        except ValueError:
+                            wait = _backoff_with_jitter(attempt)
+                    else:
                         wait = _backoff_with_jitter(attempt)
-                else:
+
+                    remaining = resp.headers.get("X-RateLimit-Remaining")
+                    reset = resp.headers.get("X-RateLimit-Reset")
+                    logger.warning(
+                        "[HTTP] 429 en %s (intento %d/%d). Esperando %.1fs"
+                        " (Remaining=%s, Reset=%s)",
+                        url[:60], attempt + 1, max_retries, wait, remaining, reset,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+
+                # ── 5xx: Server Error ──────────────────────────────
+                if resp.status >= 500:
                     wait = _backoff_with_jitter(attempt)
+                    logger.warning(
+                        "[HTTP] %d en %s (intento %d/%d). Backoff %.1fs",
+                        resp.status, url[:60], attempt + 1, max_retries, wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
 
-                remaining = resp.headers.get("X-RateLimit-Remaining")
-                reset = resp.headers.get("X-RateLimit-Reset")
-                logger.warning(
-                    "[HTTP] 429 en %s (intento %d/%d). Esperando %.1fs"
-                    " (Remaining=%s, Reset=%s)",
-                    url[:60], attempt + 1, max_retries, wait, remaining, reset,
-                )
-                await asyncio.sleep(wait)
-                continue
-
-            # ── 5xx: Server Error ──────────────────────────────────
-            if resp.status >= 500:
-                wait = _backoff_with_jitter(attempt)
-                logger.warning(
-                    "[HTTP] %d en %s (intento %d/%d). Backoff %.1fs",
-                    resp.status, url[:60], attempt + 1, max_retries, wait,
-                )
-                await asyncio.sleep(wait)
-                continue
-
-            # ── Éxito ──────────────────────────────────────────────
-            return resp
+                # ── Éxito ──────────────────────────────────────────
+                return resp
+            finally:
+                # Liberar respuesta en caso de retry (429/5xx) para evitar leaks.
+                # En caso de éxito, la referencia se devuelve y el caller es responsable.
+                if resp.status == 429 or resp.status >= 500:
+                    await resp.release()
 
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             if attempt < max_retries - 1:

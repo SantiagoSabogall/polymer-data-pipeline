@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from pathlib import Path
 
 from polymer_pipeline.core import run_pipeline
@@ -28,22 +29,35 @@ async def main() -> None:
     logger.info(" INICIANDO PIPELINE DE BÚSQUEDA CIENTÍFICA CONSOLIDADA ")
     logger.info("=" * 60)
 
-    articles = await run_pipeline()
+    try:
+        articles = await run_pipeline()
+    except Exception as e:
+        logger.error("[Error] Pipeline falló: %s", e)
+        sys.exit(1)
 
-    exports = export_all(articles, output_dir=PROJECT_ROOT)
-    for fmt, path in exports.items():
-        logger.info("[Éxito] %s exportado en %s", fmt.upper(), path)
+    try:
+        exports = export_all(articles, output_dir=PROJECT_ROOT)
+        for fmt, path in exports.items():
+            logger.info("[Éxito] %s exportado en %s", fmt.upper(), path)
+    except Exception as e:
+        logger.warning("[Advertencia] Exportación falló: %s", e)
 
-    plots = generate_all_plots(
-        articles, pdf_dir=str(PROJECT_ROOT / "plots_output"),
-    )
+    try:
+        plots = generate_all_plots(
+            articles, pdf_dir=str(PROJECT_ROOT / "plots_output"),
+        )
+    except Exception as e:
+        logger.warning("[Advertencia] Generación de gráficas falló: %s", e)
+        plots = {}
 
-    html = generate_dashboard(articles, plots=plots)
-    html_path = PROJECT_ROOT / "dashboard.html"
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(html)
-    logger.info("[Éxito] Dashboard generado en %s", html_path)
-    logger.info("[Éxito] PDFs de gráficas en ./plots_output/")
+    try:
+        html = generate_dashboard(articles, plots=plots)
+        html_path = PROJECT_ROOT / "dashboard.html"
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        logger.info("[Éxito] Dashboard generado en %s", html_path)
+    except Exception as e:
+        logger.warning("[Advertencia] Dashboard falló: %s", e)
 
     logger.info("Proceso finalizado con éxito!")
 

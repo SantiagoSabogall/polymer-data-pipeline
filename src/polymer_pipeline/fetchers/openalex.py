@@ -5,7 +5,7 @@ import logging
 from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.fetchers.openalex_base import paginated_fetch
 from polymer_pipeline.query_builder import build_openalex_query
-from polymer_pipeline.settings import OPENALEX_API_KEY, OPENALEX_EMAIL
+from polymer_pipeline.settings import get_openalex_api_key, get_openalex_email
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,8 @@ async def fetch_openalex(
 
     translated = build_openalex_query(query, preserve_quotes)
 
-    resolved_mailto = mailto or OPENALEX_EMAIL
-    resolved_api_key = api_key or OPENALEX_API_KEY
+    resolved_mailto = mailto or get_openalex_email()
+    resolved_api_key = api_key or get_openalex_api_key()
 
     normalized, complete = await paginated_fetch(
         query=translated,

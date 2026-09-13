@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 from pathlib import Path
@@ -8,41 +9,85 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def export_csv(articles: list[dict], filepath: str = "consolidated_results.csv") -> None:
+def _csv_string(articles: list[dict]) -> str:
+    """Genera CSV como string en memoria."""
+    output = io.StringIO()
+    fieldnames = [
+        "level", "title", "author", "journal", "year", "doi", "source", "pdf_url",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for art in articles:
+        writer.writerow({k: art.get(k, "") for k in fieldnames})
+    return output.getvalue()
+
+
+def _bibtex_string(articles: list[dict]) -> str:
+    """Genera BibTeX como string en memoria."""
+    lines: list[str] = []
+    for i, art in enumerate(articles):
+        source = art.get("source", "Unknown")[:3]
+        year = art.get("year", "nodate")
+        key = f"{source}_{year}_{i+1}"
+        title = _sanitize_bibtex(art.get("title", ""))
+        author = _sanitize_bibtex(art.get("author", ""))
+        journal = _sanitize_bibtex(art.get("journal", ""))
+        doi = art.get("doi", "")
+        lines.append(f"@article{{{key},")
+        lines.append(f"  title = {{{title}}},")
+        lines.append(f"  author = {{{author}}},")
+        lines.append(f"  journal = {{{journal}}},")
+        lines.append(f"  year = {{{year}}},")
+        lines.append(f"  doi = {{{doi}}},")
+        lines.append(f"  source = {{{art.get('source', '')}}}")
+        lines.append("}\n")
+    return "\n".join(lines)
+
+
+def export_csv(
+    articles: list[dict],
+    filepath: str | None = None,
+) -> str | None:
+    """Exporta artículos a CSV.
+
+    Si *filepath* se provee, escribe el archivo y devuelve ``None``.
+    Si no, devuelve el contenido CSV como string.
+    """
     if not articles:
         logger.warning("[Export] No hay artículos para exportar a CSV.")
-        return
-    fieldnames = ["level", "title", "author", "journal", "year", "doi", "source", "pdf_url"]
-    with open(filepath, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for art in articles:
-            writer.writerow({k: art.get(k, "") for k in fieldnames})
-    logger.info("[Export] CSV guardado en %s", filepath)
+        return "" if filepath is None else None
+
+    csv_str = _csv_string(articles)
+
+    if filepath is not None:
+        Path(filepath).write_text(csv_str, encoding="utf-8")
+        logger.info("[Export] CSV guardado en %s", filepath)
+        return None
+
+    return csv_str
 
 
-def export_bibtex(articles: list[dict], filepath: str = "consolidated_results.bib") -> None:
+def export_bibtex(
+    articles: list[dict],
+    filepath: str | None = None,
+) -> str | None:
+    """Exporta artículos a BibTeX.
+
+    Si *filepath* se provee, escribe el archivo y devuelve ``None``.
+    Si no, devuelve el contenido BibTeX como string.
+    """
     if not articles:
         logger.warning("[Export] No hay artículos para exportar a BibTeX.")
-        return
-    with open(filepath, "w", encoding="utf-8") as f:
-        for i, art in enumerate(articles):
-            source = art.get("source", "Unknown")[:3]
-            year = art.get("year", "nodate")
-            key = f"{source}_{year}_{i+1}"
-            title = _sanitize_bibtex(art.get("title", ""))
-            author = _sanitize_bibtex(art.get("author", ""))
-            journal = _sanitize_bibtex(art.get("journal", ""))
-            doi = art.get("doi", "")
-            f.write(f"@article{{{key},\n")
-            f.write(f"  title = {{{title}}},\n")
-            f.write(f"  author = {{{author}}},\n")
-            f.write(f"  journal = {{{journal}}},\n")
-            f.write(f"  year = {{{year}}},\n")
-            f.write(f"  doi = {{{doi}}},\n")
-            f.write(f"  source = {{{art.get('source', '')}}}\n")
-            f.write("}\n\n")
-    logger.info("[Export] BibTeX guardado en %s", filepath)
+        return "" if filepath is None else None
+
+    bib_str = _bibtex_string(articles)
+
+    if filepath is not None:
+        Path(filepath).write_text(bib_str, encoding="utf-8")
+        logger.info("[Export] BibTeX guardado en %s", filepath)
+        return None
+
+    return bib_str
 
 
 def export_json(articles: list[dict], filepath: str = "consolidated_results.json") -> None:
@@ -94,6 +139,6 @@ def export_all(
 
 
 def _sanitize_bibtex(text: str) -> str:
-    text = text.replace("{", "\\{").replace("}", "\\}")
     text = text.replace("&", "\\&")
+    text = text.replace("{", "\\{").replace("}", "\\}")
     return text

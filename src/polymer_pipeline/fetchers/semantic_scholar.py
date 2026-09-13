@@ -10,7 +10,7 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.http import make_session, request_with_retry
 from polymer_pipeline.query_builder import build_semanticscholar_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
-from polymer_pipeline.settings import SEMANTIC_SCHOLAR_API_KEY
+from polymer_pipeline.settings import get_semantic_scholar_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,9 @@ async def fetch_semantic_scholar(
     async with limiter:
         async with await make_session(timeout=30) as session:
             session.headers.update({"User-Agent": "polymer-pipeline/1.0"})
-            if SEMANTIC_SCHOLAR_API_KEY:
-                session.headers.update({"x-api-key": SEMANTIC_SCHOLAR_API_KEY})
+            ss_api_key = get_semantic_scholar_api_key()
+            if ss_api_key:
+                session.headers.update({"x-api-key": ss_api_key})
 
             while len(normalized) < max_results:
                 params: dict = {

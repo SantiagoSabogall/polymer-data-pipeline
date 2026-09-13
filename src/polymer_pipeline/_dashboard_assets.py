@@ -316,6 +316,15 @@ DASHBOARD_CSS = """
 """
 
 DASHBOARD_JS = """
+    function _esc(s) {{
+        if (s == null) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }}
+
     const dataset = {results_json};
 
     const levelKeys = {level_keys_json};
@@ -343,16 +352,17 @@ DASHBOARD_JS = """
         data.forEach(item => {{
             const tr = document.createElement("tr");
 
-            const levelClass = "lvl-" + item.level.toLowerCase();
-            const levelBadge = `<span class="badge ${{levelClass}}">${{item.level}}</span>`;
+            const levelClass = "lvl-" + _esc(item.level).toLowerCase();
+            const levelBadge = `<span class="badge ${{levelClass}}">${{_esc(item.level)}}</span>`;
 
-            const sourceClass = `src-${{item.source.toLowerCase()}}`;
-            const sourceBadge = `<span class="badge ${{sourceClass}}">${{item.source}}</span>`;
+            const sourceClass = "src-" + _esc(item.source).toLowerCase();
+            const sourceBadge =
+                `<span class="badge ${{sourceClass}}">${{_esc(item.source)}}</span>`;
 
             const doiHtml = item.doi
                 ? `<a class="doi-link"
-                      href="https://doi.org/${{item.doi}}"
-                      target="_blank">\uD83D\uDD17 ${{item.doi}}</a>`
+                      href="https://doi.org/${{encodeURIComponent(item.doi)}}"
+                      target="_blank">\uD83D\uDD17 ${{_esc(item.doi)}}</a>`
                 : '<span style="color:var(--text-muted); font-style:italic;">No disponible</span>';
 
             const abstractId = "abstract-" + Math.random().toString(36).substr(2, 9);
@@ -366,7 +376,8 @@ DASHBOARD_JS = """
                      <span class="arrow">\u25B6</span> Sin abstract
                    </span>`;
             const abstractContentHtml = hasAbstract
-                ? `<div class="abstract-content" id="${{abstractId}}">${{item.abstract}}</div>`
+                ? `<div class="abstract-content" id="${{abstractId}}">` +
+                  `${{_esc(item.abstract)}}</div>`
                 : '';
 
             const hasPdf = item.pdf_url && item.pdf_url.trim().length > 0;
@@ -377,16 +388,16 @@ DASHBOARD_JS = """
             tr.innerHTML = `
                 <td>${{levelBadge}}</td>
                 <td class="title-cell">
-                    <div>${{item.title}}</div>
+                    <div>${{_esc(item.title)}}</div>
                     <div class="title-actions">
                         ${{abstractButtonHtml}}
                         ${{pdfButtonHtml}}
                     </div>
                     ${{abstractContentHtml}}
                 </td>
-                <td>${{item.author}}</td>
-                <td>${{item.journal}}</td>
-                <td>${{item.year || 'N/A'}}</td>
+                <td>${{_esc(item.author)}}</td>
+                <td>${{_esc(item.journal)}}</td>
+                <td>${{_esc(item.year) || 'N/A'}}</td>
                 <td>${{sourceBadge}}</td>
                 <td>${{doiHtml}}</td>
             `;
@@ -426,7 +437,7 @@ DASHBOARD_JS = """
                 item.title.toLowerCase().includes(searchQuery) ||
                 item.author.toLowerCase().includes(searchQuery) ||
                 item.journal.toLowerCase().includes(searchQuery) ||
-                item.doi.toLowerCase().includes(searchQuery);
+                (item.doi || '').toLowerCase().includes(searchQuery);
 
             const matchesTitleSearch = !titleSearchQuery ||
                 item.title.toLowerCase().includes(titleSearchQuery);

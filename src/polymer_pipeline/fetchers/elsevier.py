@@ -8,9 +8,9 @@ from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
 from polymer_pipeline.settings import (
     BATCH_SIZE,
-    ELSEVIER_API_KEY,
     SLEEP_BETWEEN_BATCHES,
     TOTAL_RESULTS_PER_QUERY,
+    get_elsevier_api_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,8 @@ async def fetch_elsevier(query: str, preserve_quotes: bool = False) -> list[dict
         logger.info("[Elsevier] Usando cache para: %s...", query[:60])
         return cached
 
-    if not ELSEVIER_API_KEY:
+    elsevier_api_key = get_elsevier_api_key()
+    if not elsevier_api_key:
         logger.warning("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
 
@@ -84,7 +85,7 @@ async def fetch_elsevier(query: str, preserve_quotes: bool = False) -> list[dict
     )
 
     headers = {
-        "X-ELS-APIKey": ELSEVIER_API_KEY,
+        "X-ELS-APIKey": elsevier_api_key,
         "Accept": "application/json",
     }
 

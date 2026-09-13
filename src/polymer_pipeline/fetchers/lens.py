@@ -9,7 +9,7 @@ from polymer_pipeline.cache import get_cached, set_cache
 from polymer_pipeline.http import make_session, request_with_retry
 from polymer_pipeline.query_builder import build_lens_query
 from polymer_pipeline.rate_limiter import get_rate_limiter
-from polymer_pipeline.settings import LENS_API_KEY
+from polymer_pipeline.settings import get_lens_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,15 @@ async def fetch_lens(
         logger.info("[Lens] Usando cache para: %s...", query[:60])
         return cached
 
-    if not LENS_API_KEY:
+    lens_api_key = get_lens_api_key()
+    if not lens_api_key:
         logger.warning("[Lens] Saltando: No se configuró LENS_API_KEY en API_KEY.env")
         return []
 
     translated = build_lens_query(query, preserve_quotes)
 
     headers = {
-        "Authorization": f"Bearer {LENS_API_KEY}",
+        "Authorization": f"Bearer {lens_api_key}",
         "Content-Type": "application/json"
     }
 
@@ -78,7 +79,13 @@ async def fetch_lens(
                         if retries > max_retries:
                             logger.warning("[Lens] Reintentos agotados. Abortando.")
                             break
-                        retry_after = int(resp.headers.get("x-rate-limit-retry-after-seconds", 10))
+                        try:
+                            retry_header = resp.headers.get(
+                                "x-rate-limit-retry-after-seconds", "10"
+                            )
+                            retry_after = int(retry_header)
+                        except (ValueError, TypeError):
+                            retry_after = 10
                         logger.info(
                             "[Lens] 429. Esperando %ds (intento %d/%d).",
                             retry_after, retries, max_retries,
@@ -167,7 +174,12 @@ async def fetch_lens(
                         if len(normalized) >= max_results:
                             break
 
-                    break
+                    # Paginación: actualizar body['from'] para siguiente batch
+                    batch_size = body.get("size", min(max_results, LENS_MAX_SIZE))
+                    body["from"] = body.get("from", 0) + batch_size
+
+                    if len(results) < batch_size:
+                        break
 
                 except Exception as e:
                     logger.error("[Lens] Excepción: %s: %s", type(e).__name__, e)
