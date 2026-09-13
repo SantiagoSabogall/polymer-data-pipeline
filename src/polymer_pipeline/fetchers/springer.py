@@ -2,38 +2,42 @@ from __future__ import annotations
 
 import logging
 
-from polymer_pipeline.settings import (
-    BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
-    SLEEP_BETWEEN_BATCHES, SPRINGER_API_KEY,
-)
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_springer_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.query_builder import build_springer_query
+from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import (
+    BATCH_SIZE,
+    SLEEP_BETWEEN_BATCHES,
+    TOTAL_RESULTS_PER_QUERY,
+    get_springer_api_key,
+)
 
 logger = logging.getLogger(__name__)
 
 URL = "https://api.springernature.com/meta/v2/json"
 
 
-def fetch_springer(query: str) -> list[dict]:
+async def fetch_springer(query: str, preserve_quotes: bool = False) -> list[dict]:
     cache_key = f"Springer:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
         logger.info("[Springer] Usando cache para: %s...", query[:60])
         return cached
 
-    if not SPRINGER_API_KEY:
+    springer_api_key = get_springer_api_key()
+    if not springer_api_key:
         logger.warning("[Springer] Saltando: No se configuró SPRINGER_META_API_KEY en API_KEY.env")
         return []
 
-    translated = build_springer_query(query)
+    translated = build_springer_query(query, preserve_quotes)
 
     def build_params(start: int) -> dict:
         return {
             "q": translated,
             "p": BATCH_SIZE,
             "s": start,
-            "api_key": SPRINGER_API_KEY,
+            "api_key": springer_api_key,
         }
 
     def extract_items(data: dict) -> list[dict]:
@@ -74,7 +78,6 @@ def fetch_springer(query: str) -> list[dict]:
         result_info = data.get("result", [{}])
         return int(result_info[0].get("total", 0)) if result_info else 0
 
-    # Springer empieza la paginación en s=1.
     fetcher = PageFetcher(
         url=URL,
         batch_size=BATCH_SIZE,
@@ -87,8 +90,10 @@ def fetch_springer(query: str) -> list[dict]:
         initial_start=1,
     )
 
-    with make_session() as session:
-        normalized = fetcher.run(session)
+    limiter = get_rate_limiter("Springer")
+    async with limiter:
+        async with await make_session() as session:
+            normalized = await fetcher.run(session)
 
     set_cache(cache_key, normalized)
     return normalized

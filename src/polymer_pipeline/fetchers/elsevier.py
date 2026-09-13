@@ -2,35 +2,35 @@ from __future__ import annotations
 
 import logging
 
-from polymer_pipeline.settings import (
-    BATCH_SIZE, TOTAL_RESULTS_PER_QUERY,
-    SLEEP_BETWEEN_BATCHES, ELSEVIER_API_KEY,
-)
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_elsevier_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.query_builder import build_elsevier_query
+from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import (
+    BATCH_SIZE,
+    SLEEP_BETWEEN_BATCHES,
+    TOTAL_RESULTS_PER_QUERY,
+    get_elsevier_api_key,
+)
 
 logger = logging.getLogger(__name__)
 
 URL = "https://api.elsevier.com/content/search/scopus"
-HEADERS = {
-    "X-ELS-APIKey": ELSEVIER_API_KEY,
-    "Accept": "application/json",
-}
 
 
-def fetch_elsevier(query: str) -> list[dict]:
+async def fetch_elsevier(query: str, preserve_quotes: bool = False) -> list[dict]:
     cache_key = f"Elsevier:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
         logger.info("[Elsevier] Usando cache para: %s...", query[:60])
         return cached
 
-    if not ELSEVIER_API_KEY:
+    elsevier_api_key = get_elsevier_api_key()
+    if not elsevier_api_key:
         logger.warning("[Elsevier] Saltando: No se configuró ELSEVIER_API_KEY en API_KEY.env")
         return []
 
-    translated = build_elsevier_query(query)
+    translated = build_elsevier_query(query, preserve_quotes)
 
     def build_params(start: int) -> dict:
         return {
@@ -84,9 +84,20 @@ def fetch_elsevier(query: str) -> list[dict]:
         name="Elsevier",
     )
 
-    with make_session() as session:
-        session.headers.update(HEADERS)
-        normalized = fetcher.run(session)
+    headers = {
+        "X-ELS-APIKey": elsevier_api_key,
+        "Accept": "application/json",
+    }
+
+    limiter = get_rate_limiter("Elsevier")
+    async with limiter:
+        async with await make_session() as session:
+            session.headers.update(headers)
+            normalized = await fetcher.run(session)
+
+            # Leer headers de rate limit de Elsevier
+            if hasattr(session, '_response_headers'):
+                pass  # Los headers se leen por petición en PageFetcher
 
     set_cache(cache_key, normalized)
     return normalized

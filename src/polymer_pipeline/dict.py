@@ -145,3 +145,28 @@ LEVEL_FILTER_RULES = {
     for level in LEVELS
     if level.get("filter_rules")
 }
+
+
+def build_boolean_query(groups: list[dict], operator: str = "AND") -> str:
+    """Construye una query booleana desde grupos de términos definidos por el usuario.
+
+    groups = [
+        {"name": "Material", "terms": ["lithium", "LiFePO4"]},
+        {"name": "Propiedad", "terms": ["electrolyte", "conductivity"]},
+    ]
+    operator = "AND"
+
+    Resultado: '(lithium OR "LiFePO4") AND (electrolyte OR conductivity)'
+    """
+    rendered_groups = []
+    for group in groups:
+        terms = group.get("terms", [])
+        or_parts = []
+        for term in terms:
+            if " " in term:
+                or_parts.append(f'"{term}"')
+            else:
+                or_parts.append(term)
+        if or_parts:
+            rendered_groups.append("(" + " OR ".join(or_parts) + ")")
+    return f" {operator} ".join(rendered_groups)

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -30,21 +32,35 @@ def get_cached(key: str) -> list | None:
             path.unlink(missing_ok=True)
             return None
         return entry["data"]
-    except Exception:
+    except (json.JSONDecodeError, KeyError, OSError) as e:
+        logger.debug("[Cache] Corrupto o ilegible %s: %s", path.name, e)
+        path.unlink(missing_ok=True)
         return None
 
 
 def set_cache(key: str, data: list) -> None:
+    """Escribe la cache de forma atómica (temp file + rename)."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     entry = {"timestamp": time.time(), "data": data}
     path = _key_to_path(key)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(entry, f, ensure_ascii=False)
-    logger.debug("Cache guardado: %s", key[:40])
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=str(CACHE_DIR), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(entry, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+        logger.debug("Cache guardado: %s", path.name)
+    except OSError as e:
+        logger.warning("[Cache] Error escribiendo cache: %s", e)
+        # Limpiar temp file si existe
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def clear_cache() -> None:
     if CACHE_DIR.exists():
         for f in CACHE_DIR.iterdir():
-            f.unlink(missing_ok=True)
+            if f.is_file():
+                f.unlink(missing_ok=True)
         logger.info("Cache limpiado: %s", CACHE_DIR)

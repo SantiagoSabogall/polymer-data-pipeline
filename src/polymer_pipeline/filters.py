@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import re
+
 from polymer_pipeline.dict import (
-    LEVEL_FILTER_RULES,
-    POLYESTER_TERMS,
-    BIOPOLYMER_TERMS,
-    PACKAGING_TERMS,
-    BARRIER_TERMS,
-    BLEND_TERMS,
     ADDITIVE_TERMS,
+    BARRIER_TERMS,
+    BIOPOLYMER_TERMS,
+    BLEND_TERMS,
+    LEVEL_FILTER_RULES,
+    PACKAGING_TERMS,
+    POLYESTER_TERMS,
 )
 from polymer_pipeline.sources import SOURCES_WITH_BUILTIN_FILTER
 
@@ -61,21 +62,65 @@ def contains_any_term(text: str | None, terms: list[str]) -> bool:
     return False
 
 
-def passes_filter(article: dict, level: str) -> bool:
+def passes_filter(
+    article: dict,
+    level: str,
+    custom_rules: dict[str, list[list[str]]] | None = None,
+    title_abs_only: bool = False,
+) -> bool:
+    """Verifica si un artículo pasa el filtro de relevancia para un nivel.
+
+    Args:
+        article: Dict con campos del artículo.
+        level: Identificador del nivel (L1-L4 o "custom").
+        custom_rules: Reglas de filtro personalizadas {level: [groups]}.
+                      Si se provee, tiene prioridad sobre LEVEL_FILTER_RULES.
+        title_abs_only: Si True, busca en título+abstract (modo búsqueda libre).
+    """
     title = article.get("title", "")
     if not title or title == "Sin título":
         return False
 
-    # Springer y Elsevier ya filtran por relevancia en su propia API
     source = article.get("source", "")
+
+    if title_abs_only and level == "custom":
+        if source == "SemanticScholar":
+            return True
+        combined = f"{title} {article.get('abstract') or ''}"
+        rules_local = None
+        if custom_rules:
+            rules_local = custom_rules.get(level)
+        if rules_local is None:
+            rules_local = LEVEL_FILTER_RULES.get(level)
+        if rules_local is not None:
+            if not rules_local:
+                return True
+            cleaned = [[t.strip('"').strip("'") for t in g] for g in rules_local]
+            matches = sum(1 for g in cleaned if contains_any_term(combined, g))
+            if len(cleaned) == 1:
+                return matches >= 1
+            if len(cleaned) == 2:
+                return matches >= 2
+            return matches >= 2
+        return bool(combined.strip())
+
     if source in SOURCES_WITH_BUILTIN_FILTER:
         return True
 
-    rules = LEVEL_FILTER_RULES.get(level)
-    if rules:
-        # Al menos 2 de 3 grupos de términos deben tener coincidencia (filtro balanceado)
+    # Buscar reglas: primero en custom_rules, luego en LEVEL_FILTER_RULES
+    rules = None
+    if custom_rules:
+        rules = custom_rules.get(level)
+    if rules is None:
+        rules = LEVEL_FILTER_RULES.get(level)
+
+    if rules is not None:
+        if not rules:
+            return True  # Lista vacía = sin filtro de título
         matches = sum(1 for term_group in rules if contains_any_term(title, term_group))
         return matches >= 2
 
-    # Fallback genérico para niveles sin reglas definidas
-    return contains_any_term(title, _FALLBACK_MATERIAL) and contains_any_term(title, _FALLBACK_PROPERTY)
+    # Fallback genérico para niveles sin reglas definidas (solo preset L1-L4)
+    mat = contains_any_term(title, _FALLBACK_MATERIAL)
+    prop = contains_any_term(title, _FALLBACK_PROPERTY)
+    return mat and prop

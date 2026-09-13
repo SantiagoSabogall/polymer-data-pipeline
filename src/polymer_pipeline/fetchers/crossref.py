@@ -1,45 +1,51 @@
 from __future__ import annotations
 
 import logging
-import re
 
-from polymer_pipeline.settings import (
-    TOTAL_RESULTS_PER_QUERY,
-    SLEEP_BETWEEN_BATCHES, CROSSREF_EMAIL,
-)
 from polymer_pipeline.cache import get_cached, set_cache
-from polymer_pipeline.query_builder import build_crossref_query
 from polymer_pipeline.http import PageFetcher, make_session
+from polymer_pipeline.query_builder import build_crossref_query
+from polymer_pipeline.rate_limiter import get_rate_limiter
+from polymer_pipeline.settings import TOTAL_RESULTS_PER_QUERY, get_crossref_email
 
 logger = logging.getLogger(__name__)
 
 URL = "https://api.crossref.org/works"
 
-# Crossref polite pool: ~50 req/s. Optimizado para máximo rendimiento.
 CROSSREF_BATCH_SIZE = 100
 CROSSREF_SLEEP = 0.1
 
 
 def _strip_jats_tags(text: str) -> str:
-    """Elimina tags JATS/XML del abstract (ej: <jats:p>, <jats:sec>)."""
+    """Elimina tags JATS/XML del abstract."""
+    import re
     if not text:
         return ""
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def fetch_crossref(query: str) -> list[dict]:
+async def fetch_crossref(
+    query: str, title_abs_only: bool = False, preserve_quotes: bool = False,
+) -> list[dict]:
     cache_key = f"Crossref:{query}"
     cached = get_cached(cache_key)
     if cached is not None:
         logger.info("[Crossref] Usando cache para: %s...", query[:60])
         return cached
 
-    translated = build_crossref_query(query)
+    translated = build_crossref_query(query, preserve_quotes)
+
     headers = {
-        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{CROSSREF_EMAIL})"
+        "User-Agent": f"PolymerDataPipeline/1.0 (mailto:{get_crossref_email()})"
     }
 
     def build_params(start: int) -> dict:
+        if title_abs_only:
+            return {
+                "query.bibliographic": translated,
+                "rows": CROSSREF_BATCH_SIZE,
+                "offset": start,
+            }
         return {
             "query": translated,
             "rows": CROSSREF_BATCH_SIZE,
@@ -52,7 +58,8 @@ def fetch_crossref(query: str) -> list[dict]:
         for item in items:
             title = item.get("title", [""])[0] if item.get("title") else "Sin título"
             doi = item.get("DOI", "").lower().strip()
-            journal = item.get("container-title", [""])[0] if item.get("container-title") else "No disponible"
+            container = item.get("container-title", [""])
+            journal = container[0] if item.get("container-title") else "No disponible"
 
             authors = item.get("author", [])
             author = "Desconocido"
@@ -102,9 +109,11 @@ def fetch_crossref(query: str) -> list[dict]:
         name="Crossref",
     )
 
-    with make_session() as session:
-        session.headers.update(headers)
-        normalized = fetcher.run(session)
+    limiter = get_rate_limiter("Crossref")
+    async with limiter:
+        async with await make_session() as session:
+            session.headers.update(headers)
+            normalized = await fetcher.run(session)
 
     set_cache(cache_key, normalized)
     return normalized

@@ -1,7 +1,7 @@
 """Configuración centralizada del pipeline.
 
-Provee ``PipelineConfig`` como dataclass y mantiene las constantes a nivel
-de módulo por compatibilidad con el código existente.
+Provee ``PipelineConfig`` como dataclass y mantiene getters de API keys
+que leen desde variables de entorno (lazy loading).
 """
 
 from __future__ import annotations
@@ -49,15 +49,61 @@ SLEEP_BETWEEN_BATCHES: float = 0.5
 MAX_WORKERS: int = 5
 CACHE_TTL: int = 3600
 
-# ── API Keys ───────────────────────────────────────────────────────────
-ELSEVIER_API_KEY: str | None = os.getenv("ELSEVIER_API_KEY")
-SPRINGER_API_KEY: str | None = os.getenv("SPRINGER_META_API_KEY")
-CROSSREF_EMAIL: str = os.getenv("CROSSREF_POLITE_EMAIL", "[EMAIL_ADDRESS]")
-NCBI_EMAIL: str = os.getenv("NCBI_EMAIL", "[EMAIL_ADDRESS]")
-NCBI_API_KEY: str | None = os.getenv("PUBMED_API_KEY")
-OPENALEX_EMAIL: str = os.getenv("OPENALEX_EMAIL", "[EMAIL_ADDRESS]")
-OPENALEX_API_KEY: str | None = os.getenv("OPENALEX_API_KEY")
-LENS_API_KEY: str | None = os.getenv("LENS_API_KEY")
-# Límite estándar con API key gratuita: 1 req/s en todos los endpoints
-# (el fetcher aplica throttle global; ver fetchers/semantic_scholar.py).
-SEMANTIC_SCHOLAR_API_KEY: str | None = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+
+# ── API Keys — lazy getters ────────────────────────────────────────────
+# Estos se evalúan en tiempo de uso, no en import, para respetar load_dotenv().
+
+
+def get_elsevier_api_key() -> str | None:
+    return os.getenv("ELSEVIER_API_KEY")
+
+
+def get_springer_api_key() -> str | None:
+    return os.getenv("SPRINGER_META_API_KEY")
+
+
+def get_crossref_email() -> str:
+    return os.getenv("CROSSREF_POLITE_EMAIL", "")
+
+
+def get_ncbi_email() -> str:
+    return os.getenv("NCBI_EMAIL", "")
+
+
+def get_ncbi_api_key() -> str | None:
+    return os.getenv("PUBMED_API_KEY")
+
+
+def get_openalex_email() -> str:
+    return os.getenv("OPENALEX_EMAIL", "[EMAIL_ADDRESS]")
+
+
+def get_openalex_api_key() -> str | None:
+    return os.getenv("OPENALEX_API_KEY")
+
+
+def get_lens_api_key() -> str | None:
+    return os.getenv("LENS_API_KEY")
+
+
+def get_semantic_scholar_api_key() -> str | None:
+    return os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+
+
+# ── Cloudflare R2 Storage ─────────────────────────────────────────────
+
+
+def get_r2_access_key() -> str | None:
+    return os.getenv("R2_ACCESS_KEY")
+
+
+def get_r2_secret_key() -> str | None:
+    return os.getenv("R2_SECRET_KEY")
+
+
+def get_r2_endpoint() -> str | None:
+    return os.getenv("R2_ENDPOINT")
+
+
+def get_r2_bucket_name() -> str:
+    return os.getenv("R2_BUCKET_NAME", "polymer-papers")

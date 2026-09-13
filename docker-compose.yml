@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file:
+      - API_KEY.env
+    volumes:
+      - .cache:/app/.cache
+    restart: unless-stopped

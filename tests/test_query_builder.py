@@ -10,13 +10,13 @@ from __future__ import annotations
 import unittest
 
 from polymer_pipeline.dict import (
+    POLYESTER_TERMS,
+    SEARCH_QUERIES,
     A,
     B,
     D,
     E_additives,
     E_blends,
-    POLYESTER_TERMS,
-    SEARCH_QUERIES,
 )
 from polymer_pipeline.query_builder import (
     build_crossref_query,
