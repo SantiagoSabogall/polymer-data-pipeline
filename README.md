@@ -21,6 +21,7 @@ The pipeline supports three search modes:
 - **Interactive charts**: Plotly visualizations (year, journals, keywords, sources, levels)
 - **Data quality metrics**: Coverage stats for DOI, abstracts, PDFs
 - **Saved searches**: Store and load search configurations from JSON
+- **PDF download**: Download PDFs locally or upload to Cloudflare R2
 - **Docker support**: One-command deployment with docker-compose
 
 ## Supported Databases
@@ -49,23 +50,40 @@ cd polymer-data-pipeline
 uv sync
 
 # Or with pip
-pip install -e .
+pip install .
 ```
 
 ## Configuration
 
-Create an `API_KEY.env` file in the project root with your API keys:
+Copy the example environment file and fill in your API keys:
+
+```bash
+cp .env.example API_KEY.env
+```
+
+Edit `API_KEY.env` with your keys:
 
 ```
-CROSSREF_EMAIL=your.email@university.edu
+# Required for Crossref polite pool
+CROSSREF_POLITE_EMAIL=your.email@university.edu
+
+# Optional — increases rate limits
+NCBI_EMAIL=your.email@university.edu
+PUBMED_API_KEY=your_ncbi_key
 SPRINGER_META_API_KEY=your_springer_key
 ELSEVIER_API_KEY=your_elsevier_key
+OPENALEX_EMAIL=your.email@university.edu
 SEMANTIC_SCHOLAR_API_KEY=your_s2_key
 LENS_API_KEY=your_lens_key
-PUBMED_API_KEY=your_ncbi_key
+
+# Optional — Cloudflare R2 for PDF storage
+R2_ACCESS_KEY=your_r2_access_key
+R2_SECRET_KEY=your_r2_secret_key
+R2_ENDPOINT=https://your_account_id.r2.cloudflarestorage.com
+R2_BUCKET_NAME=polymer-papers
 ```
 
-Keys for Springer, Elsevier, Semantic Scholar, and Lens are optional but significantly increase rate limits. Crossref and PubMed work without keys at reduced rates.
+Keys for Springer, Elsevier, Semantic Scholar, and Lens are optional but significantly increase rate limits. Crossref and PubMed work without keys at reduced rates. R2 is optional — the pipeline works without it.
 
 ## Usage
 
@@ -75,13 +93,26 @@ Keys for Springer, Elsevier, Semantic Scholar, and Lens are optional but signifi
 uv run streamlit run app.py
 ```
 
-Opens the interactive dashboard at `http://localhost:8501`. From the sidebar you can:
+Opens the interactive dashboard at `http://localhost:8501`. From the interface you can:
 - Select search mode (presets, free search, or visual builder)
 - Choose which databases to query
 - Set maximum results per query
 - Apply post-search filters (text, year, source, level)
 - Select multiple articles in the results table
 - Export selected or all results as CSV, BibTeX, or JSON
+- Download PDFs locally or upload to Cloudflare R2
+
+### Command Line
+
+```bash
+uv run python main.py
+```
+
+Runs the full pipeline across all databases and all preset levels. Generates:
+- `consolidated_results.json` — Normalized article data
+- `consolidated_results.csv` — Spreadsheet format
+- `consolidated_results.bib` — BibTeX for LaTeX
+- `dashboard.html` — Static HTML dashboard
 
 ## Search Modes
 
@@ -123,12 +154,12 @@ Inside each group, terms are joined with OR automatically by the system.
 
 Build queries using groups of terms with a GUI. No boolean syntax needed.
 
-1. **Create groups** - Each group represents a concept (material, property, application)
-2. **Add terms** - Write synonyms inside each group, one per line
-3. **Choose operator** - `AND` (all groups must match) or `OR` (any group matches)
-4. **Preview** - See the generated boolean query in real time
+1. **Create groups** — Each group represents a concept (material, property, application)
+2. **Add terms** — Write synonyms inside each group, one per line
+3. **Choose operator** — `AND` (all groups must match) or `OR` (any group matches)
+4. **Preview** — See the generated boolean query in real time
 
-**Example - Nanocomposite search:**
+**Example — Nanocomposite search:**
 
 | Group | Terms (one per line) |
 |-------|----------------------|
@@ -154,18 +185,6 @@ Each API has its own query syntax. The system translates your query automaticall
 | `"high barrier"` | `"high barrier"` | `"high barrier"[Title/Abstract]` | `TITLE-ABS-KEY("high barrier")` | `"high barrier"` |
 | `PET` | `PET*` | `PET[Title/Abstract]` | `TITLE-ABS-KEY(PET)` | `PET` |
 
-### Command Line
-
-```bash
-uv run python main.py
-```
-
-Runs the full pipeline across all databases and all preset levels. Generates:
-- `consolidated_results.json` - Normalized article data
-- `consolidated_results.csv` - Spreadsheet format
-- `consolidated_results.bib` - BibTeX for LaTeX
-- `dashboard.html` - Static HTML dashboard
-
 ## Project Structure
 
 ```
@@ -173,6 +192,11 @@ polymer-data-pipeline/
 ├── app.py                          # Streamlit web interface
 ├── main.py                         # CLI entry point
 ├── API_KEY.env                     # API keys (not tracked)
+├── Dockerfile                      # Docker image definition
+├── docker-compose.yml              # Docker Compose config
+├── .env.example                    # Environment variable template
+├── .dockerignore                   # Docker build exclusions
+├── .streamlit/config.toml          # Streamlit theme config
 ├── src/polymer_pipeline/
 │   ├── core.py                     # Pipeline orchestration (async)
 │   ├── http.py                     # HTTP client with retry/backoff
@@ -182,11 +206,20 @@ polymer-data-pipeline/
 │   ├── dict.py                     # Term lists and boolean queries
 │   ├── query_builder.py            # Query translation per API
 │   ├── sources.py                  # Database registry and colors
+│   ├── settings.py                 # Centralized config and API keys
 │   ├── models.py                   # TypedDict definitions
+│   ├── downloader.py               # PDF downloader with R2 upload
+│   ├── r2_storage.py               # Cloudflare R2 client
+│   ├── r2_manage.py                # R2 management functions
 │   ├── plots_interactive.py        # Plotly visualizations
+│   ├── _plot_common.py             # Shared plot utilities
+│   ├── plots.py                    # Matplotlib static plots
 │   ├── export.py                   # CSV and BibTeX export
+│   ├── dashboard.py                # HTML dashboard generator
+│   ├── _dashboard_assets.py        # Dashboard HTML/CSS assets
 │   ├── pipeline.py                 # CLI pipeline logic
 │   └── fetchers/
+│       ├── __init__.py             # Fetcher registry
 │       ├── openalex_base.py        # Shared OpenAlex/MDPI logic
 │       ├── crossref.py
 │       ├── springer.py
@@ -197,7 +230,10 @@ polymer-data-pipeline/
 │       ├── semantic_scholar.py
 │       └── lens.py
 └── tests/
-    └── test_query_builder.py       # Unit tests for query construction
+    ├── test_query_builder.py       # Query construction tests
+    ├── test_core.py                # Pipeline orchestration tests
+    ├── test_downloader.py          # PDF downloader tests
+    └── test_r2_storage.py          # R2 storage tests
 ```
 
 ## Architecture
@@ -247,11 +283,36 @@ docker compose up --build
 
 The app will be available at `http://localhost:8501`.
 
+To use Cloudflare R2 for PDF storage, add your R2 credentials to `API_KEY.env` before building.
+
+### Cloudflare R2 Setup
+
+1. Create a Cloudflare R2 bucket named `polymer-papers` (or set `R2_BUCKET_NAME` in your env)
+2. Generate R2 API credentials in the Cloudflare dashboard
+3. Add the credentials to your `API_KEY.env`:
+   ```
+   R2_ACCESS_KEY=your_access_key
+   R2_SECRET_KEY=your_secret_key
+   R2_ENDPOINT=https://your_account_id.r2.cloudflarestorage.com
+   R2_BUCKET_NAME=polymer-papers
+   ```
+4. PDFs will automatically upload to R2 when you use the "Upload to R2" button in the app
+
 ## Testing
 
 ```bash
-uv run pytest tests/ -v
+# Run all tests
+python -m unittest discover -s tests -v
+
+# Run specific test file
+python -m unittest tests.test_core -v
 ```
+
+Tests cover:
+- **test_core.py**: Pipeline orchestration, deduplication, filtering, metrics
+- **test_downloader.py**: PDF validation, rate limiting, download logic
+- **test_r2_storage.py**: R2 client operations, error handling
+- **test_query_builder.py**: Boolean query construction and API translation
 
 ## License
 
